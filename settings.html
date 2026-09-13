@@ -1,0 +1,43 @@
+<div class="chance-ext-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Chance Extension</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="chance-ext-row">
+                <label class="checkbox_label" for="chance_ext_enabled">
+                    <input id="chance_ext_enabled" type="checkbox">
+                    <span>Включить проверку вероятности</span>
+                </label>
+            </div>
+
+            <div class="chance-ext-row">
+                <label for="chance_ext_bonus">Бонус к вероятности, %</label>
+                <input
+                    id="chance_ext_bonus"
+                    class="text_pole"
+                    type="number"
+                    min="0"
+                    max="99"
+                    step="1"
+                    value="20"
+                >
+            </div>
+
+            <div class="chance-ext-row">
+                <label for="chance_ext_model">Модель OpenRouter</label>
+                <input
+                    id="chance_ext_model"
+                    class="text_pole"
+                    type="text"
+                    value="google/gemini-3.8-flash"
+                    placeholder="provider/model-name"
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+                <small>Название вводится вручную, например: google/gemini-3.8-flash</small>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,12 @@
+{
+    "display_name": "Chance Extension",
+    "loading_order": 150,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "adlso",
+    "version": "0.1.0",
+    "minimum_client_version": "1.12.6",
+    "generate_interceptor": "chanceExtInterceptor"
+}

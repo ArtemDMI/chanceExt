@@ -1,0 +1,18 @@
+.chance-ext-settings .inline-drawer-content {
+    padding: 0.5rem;
+}
+
+.chance-ext-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+}
+
+.chance-ext-row:last-child {
+    margin-bottom: 0;
+}
+
+.chance-ext-row small {
+    opacity: 0.75;
+}

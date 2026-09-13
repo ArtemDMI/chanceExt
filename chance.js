@@ -1,0 +1,179 @@
+export const RANDOMIZER_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['status', 'actions_for_roll'],
+    properties: {
+        status: {
+            type: 'string',
+            enum: ['ok', 'error'],
+        },
+        actions_for_roll: {
+            type: 'array',
+            maxItems: 1,
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['percent', 'failure_text'],
+                properties: {
+                    percent: {
+                        type: 'integer',
+                        minimum: 0,
+                        maximum: 99,
+                    },
+                    failure_text: {
+                        type: 'string',
+                        minLength: 1,
+                        maxLength: 256,
+                    },
+                },
+            },
+        },
+        notes: {
+            type: 'string',
+        },
+        error: {
+            type: 'string',
+        },
+    },
+};
+
+export const RANDOMIZER_SYSTEM_PROMPT = `
+Ты — скрытый оценщик вероятности успеха действия игрока.
+Оценивай только последнее сообщение пользователя. Предыдущие сообщения используй только как контекст сцены, отношений и препятствий.
+
+Верни только JSON по переданной схеме.
+- Если сообщение не содержит неопределённой попытки получить преимущество, верни actions_for_roll: [].
+- Преимущество: награда, секс, деньги, добыча, доступ, спасение, победа, власть, контроль, полезный предмет или слишком удобный исход.
+- Не требуй проверки для обычной речи, вопросов, взглядов, жестов, ходьбы и простых перемещений.
+- Если подходящих действий несколько, выбери одно с самым низким шансом.
+- Верни чистую вероятность без скрытых бонусов; бонус добавит код.
+- Шкала: 0 — невозможно; 1–10 — почти невозможно; 11–30 — очень трудно или слишком рано;
+  31–55 — трудно; 56–75 — возможно; 76–90 — вероятно; 91–99 — почти наверняка.
+- Никогда не возвращай 100.
+- failure_text — короткая фраза на языке сцены о том, что именно не удалось.
+- Не определяй успех броска: бросок выполняет код.
+`.trim();
+
+function normalizeText(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+export function selectTurnMessages(chat, contextCount = 3) {
+    const messages = Array.isArray(chat) ? chat : [];
+    let targetIndex = -1;
+
+    for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index];
+        if (message?.is_user && !message?.is_system && normalizeText(message?.mes)) {
+            targetIndex = index;
+            break;
+        }
+    }
+
+    if (targetIndex < 0) {
+        return null;
+    }
+
+    const context = messages
+        .slice(0, targetIndex)
+        .filter(message => !message?.is_system && normalizeText(message?.mes))
+        .slice(-Math.max(0, contextCount));
+
+    return {
+        target: messages[targetIndex],
+        targetIndex,
+        context,
+    };
+}
+
+export function buildRandomizerMessages(selection) {
+    const contextLines = selection.context.map((message, index) => {
+        const role = message.is_user ? 'user' : 'assistant';
+        return `Контекст ${index + 1} [${role}]: ${normalizeText(message.mes)}`;
+    });
+
+    return [
+        {
+            role: 'system',
+            content: RANDOMIZER_SYSTEM_PROMPT,
+        },
+        {
+            role: 'user',
+            content: `<scene_context>\n${contextLines.join('\n') || '(нет предыдущего контекста)'}\n</scene_context>`,
+        },
+        {
+            role: 'user',
+            content: `<latest_user_move>\n${normalizeText(selection.target.mes)}\n</latest_user_move>`,
+        },
+    ];
+}
+
+export function parseRandomizerPayload(content) {
+    let payload = content;
+    if (typeof payload === 'string') {
+        const clean = payload.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        payload = JSON.parse(clean);
+    }
+
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        throw new Error('OpenRouter returned a non-object response');
+    }
+    if (payload.status !== 'ok') {
+        throw new Error(normalizeText(payload.error) || 'Randomizer returned an error status');
+    }
+    if (!Array.isArray(payload.actions_for_roll) || payload.actions_for_roll.length > 1) {
+        throw new Error('Invalid actions_for_roll');
+    }
+    if (payload.actions_for_roll.length === 0) {
+        return null;
+    }
+
+    const action = payload.actions_for_roll[0];
+    const percent = action?.percent;
+    const failureText = normalizeText(action?.failure_text);
+    if (!Number.isInteger(percent) || percent < 0 || percent > 99 || !failureText || failureText.length > 256) {
+        throw new Error('Invalid roll action');
+    }
+
+    return {
+        percent,
+        failureText,
+    };
+}
+
+export function effectivePercent(basePercent, bonusPercent) {
+    const base = Number.isFinite(Number(basePercent)) ? Math.trunc(Number(basePercent)) : 0;
+    const bonus = Number.isFinite(Number(bonusPercent)) ? Math.trunc(Number(bonusPercent)) : 0;
+    return Math.min(99, Math.max(0, base + bonus));
+}
+
+export function secureD100(cryptoApi = globalThis.crypto) {
+    if (!cryptoApi?.getRandomValues) {
+        return Math.floor(Math.random() * 100) + 1;
+    }
+
+    const values = new Uint32Array(1);
+    const acceptedRange = Math.floor(0x100000000 / 100) * 100;
+    do {
+        cryptoApi.getRandomValues(values);
+    } while (values[0] >= acceptedRange);
+
+    return (values[0] % 100) + 1;
+}
+
+export function resolveRoll(action, bonusPercent, roll = secureD100()) {
+    const percent = effectivePercent(action.percent, bonusPercent);
+    return {
+        basePercent: action.percent,
+        percent,
+        rolledValue: roll,
+        success: roll <= percent,
+        failureText: action.failureText,
+    };
+}
+
+export function appendFailureMarker(text, failureText) {
+    const source = String(text ?? '');
+    const separator = source && !/\s$/.test(source) ? ' ' : '';
+    return `${source}${separator}((Неудача попытки {{user}}: ${normalizeText(failureText)}))`;
+}
