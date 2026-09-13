@@ -148,7 +148,7 @@ async function requestProbability(messages, model) {
 }
 
 function shouldProcessGeneration(type) {
-    return !['quiet', 'impersonate', 'continue', 'swipe'].includes(String(type || '').toLowerCase());
+    return !['quiet', 'impersonate', 'continue'].includes(String(type || '').toLowerCase());
 }
 
 async function interceptGeneration(chat, _contextSize, _abort, type) {
