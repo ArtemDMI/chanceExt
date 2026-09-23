@@ -3,6 +3,7 @@ import {
     RANDOMIZER_SCHEMA,
     appendFailureMarker,
     appendPlanLine,
+    blockPlanNode,
     buildPlanContext,
     buildPlanRequestBody,
     buildRandomizerMessages,
@@ -38,6 +39,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     model: 'google/gemini-3.8-flash',
     planInjecting: false,
     planTemperature: null,
+    planBlockedNode: '',
 });
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -72,6 +74,7 @@ function normalizeSettings(raw) {
         model: String(source.model || DEFAULT_SETTINGS.model).trim(),
         planInjecting: source.planInjecting === true,
         planTemperature: normalizePlanTemperature(source.planTemperature),
+        planBlockedNode: String(source.planBlockedNode ?? '').trim(),
     };
 }
 
@@ -94,6 +97,7 @@ function updateSettingsUi() {
     $('#chance_ext_model').val(settings.model);
     $('#chance_ext_plan_injecting').prop('checked', settings.planInjecting);
     $('#chance_ext_plan_temperature').val(settings.planTemperature ?? '');
+    $('#chance_ext_plan_blocked_node').val(settings.planBlockedNode);
 }
 
 function bindSettingsUi() {
@@ -124,6 +128,12 @@ function bindSettingsUi() {
     $('#chance_ext_plan_temperature').on('change', event => {
         settings.planTemperature = normalizePlanTemperature(event.target.value);
         event.target.value = settings.planTemperature ?? '';
+        saveSettings();
+    });
+
+    $('#chance_ext_plan_blocked_node').on('change', event => {
+        settings.planBlockedNode = String(event.target.value ?? '').trim();
+        event.target.value = settings.planBlockedNode;
         saveSettings();
     });
 }
@@ -379,7 +389,7 @@ function applyPlanInjection(chat, nodes) {
         return;
     }
 
-    const planLine = formatPlanLine(nodes);
+    const planLine = formatPlanLine(blockPlanNode(nodes, settings.planBlockedNode));
     // Same prompt copy as the failure marker: the saved chat message stays unchanged.
     target.mes = appendPlanLine(target.mes, planLine);
     console.info(`[${EXTENSION_NAME}] План внедрён`, planLine);

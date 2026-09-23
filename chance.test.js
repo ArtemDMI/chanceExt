@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
     appendFailureMarker,
     appendPlanLine,
+    blockPlanNode,
     buildPlanContext,
     buildPlanRequestBody,
     normalizePlanTemperature,
@@ -115,6 +116,16 @@ test('sends plan temperature only when the field is filled', () => {
     assert.deepEqual(buildPlanRequestBody('сцена', ''), { context: 'сцена' });
     assert.deepEqual(buildPlanRequestBody('сцена', 0), { context: 'сцена', generation: { temperature: 0 } });
     assert.deepEqual(buildPlanRequestBody('сцена', 2.5), { context: 'сцена', generation: { temperature: 2 } });
+});
+
+test('replaces a blocked node with a single space and keeps its slot', () => {
+    const nodes = ['паника', 'новый персонаж', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег'];
+    assert.deepEqual(
+        blockPlanNode(nodes, '  новый   персонаж '),
+        ['паника', ' ', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег'],
+    );
+    assert.deepEqual(blockPlanNode(nodes, ''), nodes);
+    assert.deepEqual(blockPlanNode(nodes, 'другая нода'), nodes);
 });
 
 test('formats one plan line and appends it after the user turn', () => {

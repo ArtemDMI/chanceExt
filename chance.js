@@ -351,6 +351,14 @@ export function parsePlanNodes(data) {
     return cleaned;
 }
 
+export function blockPlanNode(nodes, blockedText) {
+    const blocked = normalizeText(blockedText);
+    if (!blocked || !Array.isArray(nodes)) {
+        return nodes;
+    }
+    return nodes.map(node => node === blocked ? MISSING_PLAN_NODE : node);
+}
+
 export function formatPlanLine(nodes) {
     const plan = nodes.map((node, index) => `${index + 1}. [${node}]`).join(' - ');
     return `ВАЖНО!!! Адаптируй свой ответ под следующий план-структура сюжета: ${plan}. Не выходи из роли. Интерпретируй интересно.`;
