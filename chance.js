@@ -351,12 +351,21 @@ export function parsePlanNodes(data) {
     return cleaned;
 }
 
+function planNodeKey(value) {
+    return normalizeText(value).toLocaleLowerCase('ru');
+}
+
 export function blockPlanNode(nodes, blockedText) {
-    const blocked = normalizeText(blockedText);
-    if (!blocked || !Array.isArray(nodes)) {
+    const blocked = new Set(
+        String(blockedText ?? '')
+            .split(',')
+            .map(planNodeKey)
+            .filter(Boolean),
+    );
+    if (blocked.size === 0 || !Array.isArray(nodes)) {
         return nodes;
     }
-    return nodes.map(node => node === blocked ? MISSING_PLAN_NODE : node);
+    return nodes.map(node => blocked.has(planNodeKey(node)) ? MISSING_PLAN_NODE : node);
 }
 
 export function formatPlanLine(nodes) {

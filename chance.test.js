@@ -119,10 +119,10 @@ test('sends plan temperature only when the field is filled', () => {
 });
 
 test('replaces a blocked node with a single space and keeps its slot', () => {
-    const nodes = ['паника', 'новый персонаж', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег'];
+    const nodes = ['Паника', 'новый   персонаж', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег'];
     assert.deepEqual(
-        blockPlanNode(nodes, '  новый   персонаж '),
-        ['паника', ' ', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег'],
+        blockPlanNode(nodes, '  Новый Персонаж , ПАНИКА '),
+        [' ', ' ', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег'],
     );
     assert.deepEqual(blockPlanNode(nodes, ''), nodes);
     assert.deepEqual(blockPlanNode(nodes, 'другая нода'), nodes);
