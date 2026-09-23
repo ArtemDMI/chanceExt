@@ -372,10 +372,6 @@ function applyPlanInjection(chat, nodes) {
     // Same prompt copy as the failure marker: the saved chat message stays unchanged.
     target.mes = appendPlanLine(target.mes, planLine);
     console.info(`[${EXTENSION_NAME}] План внедрён`, planLine);
-    toastr.info(planLine, EXTENSION_NAME, {
-        ...TOAST_OPTIONS,
-        timeOut: 6_000,
-    });
 }
 
 function getExpectedMessageId(type) {
