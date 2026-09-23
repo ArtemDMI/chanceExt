@@ -46,6 +46,21 @@
                 </label>
                 <small>Перед каждым запросом и свайпом запрашивает план и дописывает его в конец последнего сообщения пользователя.</small>
             </div>
+
+            <div class="chance-ext-row">
+                <label for="chance_ext_plan_temperature">Температура плана</label>
+                <input
+                    id="chance_ext_plan_temperature"
+                    class="text_pole"
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    placeholder="не задана"
+                    autocomplete="off"
+                >
+                <small>Пусто — поле не отправляется. Введённое число от 0 до 2 уходит как generation.temperature.</small>
+            </div>
         </div>
     </div>
 </div>

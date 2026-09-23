@@ -300,6 +300,32 @@ function trimTextToTokenBudget(text, tokenBudget) {
 
 const MISSING_PLAN_NODE = ' ';
 
+export function normalizePlanTemperature(value) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    const raw = String(value).trim().replace(',', '.');
+    if (!raw) {
+        return null;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+        return null;
+    }
+    return Math.min(2, Math.max(0, parsed));
+}
+
+export function buildPlanRequestBody(context, temperature) {
+    const body = { context };
+    const normalized = normalizePlanTemperature(temperature);
+    if (normalized === null) {
+        return body;
+    }
+    // An empty field stays off the wire so the server keeps its own default. An entered 0 is still sent.
+    body.generation = { temperature: normalized };
+    return body;
+}
+
 export function parsePlanNodes(data) {
     const nodes = data?.nodes;
     if (!Array.isArray(nodes) || nodes.length !== 10) {

@@ -4,6 +4,7 @@ import {
     appendFailureMarker,
     appendPlanLine,
     buildPlanContext,
+    buildPlanRequestBody,
     buildRandomizerMessages,
     estimatePlanTokens,
     createPlanRequestGate,
@@ -11,6 +12,7 @@ import {
     findLastUserMessage,
     formatPlanLine,
     preparePlanChat,
+    normalizePlanTemperature,
     parsePlanNodes,
     parseRandomizerPayload,
     resolveRoll,
@@ -35,6 +37,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     bonusPercent: 20,
     model: 'google/gemini-3.8-flash',
     planInjecting: false,
+    planTemperature: null,
 });
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -68,6 +71,7 @@ function normalizeSettings(raw) {
         bonusPercent: Number.isFinite(parsedBonus) ? Math.min(99, Math.max(0, parsedBonus)) : DEFAULT_SETTINGS.bonusPercent,
         model: String(source.model || DEFAULT_SETTINGS.model).trim(),
         planInjecting: source.planInjecting === true,
+        planTemperature: normalizePlanTemperature(source.planTemperature),
     };
 }
 
@@ -89,6 +93,7 @@ function updateSettingsUi() {
     $('#chance_ext_bonus').val(settings.bonusPercent);
     $('#chance_ext_model').val(settings.model);
     $('#chance_ext_plan_injecting').prop('checked', settings.planInjecting);
+    $('#chance_ext_plan_temperature').val(settings.planTemperature ?? '');
 }
 
 function bindSettingsUi() {
@@ -113,6 +118,12 @@ function bindSettingsUi() {
 
     $('#chance_ext_plan_injecting').on('change', event => {
         settings.planInjecting = event.target.checked;
+        saveSettings();
+    });
+
+    $('#chance_ext_plan_temperature').on('change', event => {
+        settings.planTemperature = normalizePlanTemperature(event.target.value);
+        event.target.value = settings.planTemperature ?? '';
         saveSettings();
     });
 }
@@ -253,7 +264,7 @@ async function requestPlanNodes(contextText, requestId, controller) {
                 Accept: 'application/json',
             },
             signal: controller.signal,
-            body: JSON.stringify({ context: contextText }),
+            body: JSON.stringify(buildPlanRequestBody(contextText, settings.planTemperature)),
         });
 
         if (!planRequests.isCurrent(requestId)) {

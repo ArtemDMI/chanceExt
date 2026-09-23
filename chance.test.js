@@ -5,6 +5,8 @@ import {
     appendFailureMarker,
     appendPlanLine,
     buildPlanContext,
+    buildPlanRequestBody,
+    normalizePlanTemperature,
     estimatePlanTokens,
     formatPlanLine,
     isPlanApiOfflineError,
@@ -103,6 +105,16 @@ test('keeps each plan request tied to the click that sent it', () => {
     assert.equal(second, 2);
     assert.equal(previousStillCurrent, false);
     assert.equal(gate.isCurrent(second), true);
+});
+
+test('sends plan temperature only when the field is filled', () => {
+    assert.equal(normalizePlanTemperature(''), null);
+    assert.equal(normalizePlanTemperature('1,5'), 1.5);
+    assert.equal(normalizePlanTemperature(0), 0);
+    assert.deepEqual(buildPlanRequestBody('сцена', null), { context: 'сцена' });
+    assert.deepEqual(buildPlanRequestBody('сцена', ''), { context: 'сцена' });
+    assert.deepEqual(buildPlanRequestBody('сцена', 0), { context: 'сцена', generation: { temperature: 0 } });
+    assert.deepEqual(buildPlanRequestBody('сцена', 2.5), { context: 'сцена', generation: { temperature: 2 } });
 });
 
 test('formats one plan line and appends it after the user turn', () => {
