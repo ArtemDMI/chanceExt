@@ -12,6 +12,8 @@ import {
     isPlanApiOfflineError,
     findLastUserMessage,
     formatPlanLine,
+    limitPlanNodes,
+    normalizePlanNodeCount,
     preparePlanChat,
     normalizePlanTemperature,
     parsePlanNodes,
@@ -40,6 +42,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     planInjecting: false,
     planTemperature: null,
     planBlockedNode: '',
+    planNodeCount: 10,
 });
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -75,6 +78,7 @@ function normalizeSettings(raw) {
         planInjecting: source.planInjecting === true,
         planTemperature: normalizePlanTemperature(source.planTemperature),
         planBlockedNode: String(source.planBlockedNode ?? '').trim(),
+        planNodeCount: normalizePlanNodeCount(source.planNodeCount),
     };
 }
 
@@ -98,6 +102,7 @@ function updateSettingsUi() {
     $('#chance_ext_plan_injecting').prop('checked', settings.planInjecting);
     $('#chance_ext_plan_temperature').val(settings.planTemperature ?? '');
     $('#chance_ext_plan_blocked_node').val(settings.planBlockedNode);
+    $('#chance_ext_plan_node_count').val(settings.planNodeCount);
 }
 
 function bindSettingsUi() {
@@ -134,6 +139,12 @@ function bindSettingsUi() {
     $('#chance_ext_plan_blocked_node').on('change', event => {
         settings.planBlockedNode = String(event.target.value ?? '').trim();
         event.target.value = settings.planBlockedNode;
+        saveSettings();
+    });
+
+    $('#chance_ext_plan_node_count').on('change', event => {
+        settings.planNodeCount = normalizePlanNodeCount(event.target.value);
+        event.target.value = settings.planNodeCount;
         saveSettings();
     });
 }
@@ -389,7 +400,7 @@ function applyPlanInjection(chat, nodes) {
         return;
     }
 
-    const planLine = formatPlanLine(blockPlanNode(nodes, settings.planBlockedNode));
+    const planLine = formatPlanLine(limitPlanNodes(blockPlanNode(nodes, settings.planBlockedNode), settings.planNodeCount));
     // Same prompt copy as the failure marker: the saved chat message stays unchanged.
     target.mes = appendPlanLine(target.mes, planLine);
     console.info(`[${EXTENSION_NAME}] План внедрён`, planLine);

@@ -355,6 +355,23 @@ function planNodeKey(value) {
     return normalizeText(value).toLocaleLowerCase('ru');
 }
 
+export const PLAN_INJECT_NODE_LIMIT = 10;
+
+export function normalizePlanNodeCount(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) {
+        return PLAN_INJECT_NODE_LIMIT;
+    }
+    return Math.min(PLAN_INJECT_NODE_LIMIT, Math.max(1, parsed));
+}
+
+export function limitPlanNodes(nodes, count) {
+    if (!Array.isArray(nodes)) {
+        return nodes;
+    }
+    return nodes.slice(0, normalizePlanNodeCount(count));
+}
+
 export function blockPlanNode(nodes, blockedText) {
     const blocked = new Set(
         String(blockedText ?? '')

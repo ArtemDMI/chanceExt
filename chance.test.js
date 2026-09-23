@@ -10,6 +10,8 @@ import {
     normalizePlanTemperature,
     estimatePlanTokens,
     formatPlanLine,
+    limitPlanNodes,
+    normalizePlanNodeCount,
     isPlanApiOfflineError,
     createPlanRequestGate,
     preparePlanChat,
@@ -126,6 +128,16 @@ test('replaces a blocked node with a single space and keeps its slot', () => {
     );
     assert.deepEqual(blockPlanNode(nodes, ''), nodes);
     assert.deepEqual(blockPlanNode(nodes, 'другая нода'), nodes);
+});
+
+test('keeps only the first nodes allowed for injection', () => {
+    const nodes = ['паника', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег', 'финал'];
+    assert.equal(normalizePlanNodeCount(''), 10);
+    assert.equal(normalizePlanNodeCount(4), 4);
+    assert.equal(normalizePlanNodeCount(12), 10);
+    assert.deepEqual(limitPlanNodes(nodes, 4), ['паника', 'разговор', 'тишина', 'шаг']);
+    assert.equal(formatPlanLine(limitPlanNodes(nodes, 4)).includes('5. [дверь]'), false);
+    assert.equal(formatPlanLine(limitPlanNodes(nodes, 4)).includes('4. [шаг]'), true);
 });
 
 test('formats one plan line and appends it after the user turn', () => {

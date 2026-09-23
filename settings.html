@@ -74,6 +74,20 @@
                 >
                 <small>Через запятую. Совпадение без учёта регистра и лишних пробелов заменяет ноду на пробел.</small>
             </div>
+
+            <div class="chance-ext-row">
+                <label for="chance_ext_plan_node_count">Нод в инжекте</label>
+                <input
+                    id="chance_ext_plan_node_count"
+                    class="text_pole"
+                    type="number"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value="10"
+                >
+                <small>API всегда отдаёт 10. В промпт идут первые N.</small>
+            </div>
         </div>
     </div>
 </div>
