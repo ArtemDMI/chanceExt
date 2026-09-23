@@ -222,7 +222,7 @@ function shouldRequestPlan(type) {
 }
 
 function notifyPlanApiOff() {
-    const message = 'Plan API выключен. Включите API';
+    const message = 'API плана выключен. Включите API плана';
     console.error(`[${EXTENSION_NAME}] ${message}`);
     toastr.error(message, EXTENSION_NAME, TOAST_OPTIONS);
 }

@@ -110,6 +110,13 @@ test('formats one plan line and appends it after the user turn', () => {
     assert.deepEqual(parsePlanNodes({ nodes }), nodes);
     assert.equal(parsePlanNodes({ nodes: nodes.slice(0, 9) }), null);
 
+    const withGaps = ['паника', ' ', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', ' '];
+    assert.deepEqual(parsePlanNodes({ nodes: withGaps }), withGaps);
+    assert.equal(
+        formatPlanLine(withGaps),
+        'ВАЖНО!!! Адаптируй свой ответ под следующий план-структура сюжета: 1. [паника] - 2. [ ] - 3. [разговор] - 4. [тишина] - 5. [шаг] - 6. [дверь] - 7. [свет] - 8. [голос] - 9. [выбор] - 10. [ ]. Не выходи из роли. Интерпретируй интересно.',
+    );
+
     const line = formatPlanLine(nodes);
     assert.equal(
         line,

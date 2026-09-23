@@ -298,6 +298,8 @@ function trimTextToTokenBudget(text, tokenBudget) {
     return value.slice(value.length - low);
 }
 
+const MISSING_PLAN_NODE = ' ';
+
 export function parsePlanNodes(data) {
     const nodes = data?.nodes;
     if (!Array.isArray(nodes) || nodes.length !== 10) {
@@ -306,6 +308,14 @@ export function parsePlanNodes(data) {
 
     const cleaned = [];
     for (const node of nodes) {
+        if (typeof node !== 'string') {
+            return null;
+        }
+        // A short generation is still HTTP 200: the gap stays in place as one space.
+        if (node === MISSING_PLAN_NODE) {
+            cleaned.push(MISSING_PLAN_NODE);
+            continue;
+        }
         const text = normalizeText(node);
         if (!text) {
             return null;
