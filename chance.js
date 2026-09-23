@@ -177,3 +177,184 @@ export function appendFailureMarker(text, failureText) {
     const separator = source && !/\s$/.test(source) ? ' ' : '';
     return `${source}${separator}((Неудача попытки {{user}}: ${normalizeText(failureText)}))`;
 }
+
+// The plan service keeps the last 2000 tokens and left-trims the rest.
+// 2500 * 1.3 is headroom for a rough char estimate; overflow is cut server-side.
+export const PLAN_CONTEXT_TOKEN_BUDGET = Math.round(2500 * 1.3);
+
+const CYRILLIC_CHARS_PER_TOKEN = 2;
+const OTHER_CHARS_PER_TOKEN = 4;
+
+export function estimatePlanTokens(text) {
+    const value = String(text ?? '');
+    let tokens = 0;
+    for (let index = 0; index < value.length; index++) {
+        const code = value.charCodeAt(index);
+        const cyrillic = code >= 0x0400 && code <= 0x04FF;
+        // USER2/ruBERT splits Cyrillic tighter than the usual 4 Latin chars per token.
+        tokens += cyrillic ? 1 / CYRILLIC_CHARS_PER_TOKEN : 1 / OTHER_CHARS_PER_TOKEN;
+    }
+    return Math.ceil(tokens);
+}
+
+const NON_DIALOGUE_TYPES = new Set([
+    'narrator',
+    'comment',
+    'help',
+    'welcome',
+    'empty',
+    'generic',
+    'slash_commands',
+    'formatting',
+    'hotkeys',
+    'macros',
+    'welcome_prompt',
+    'assistant_note',
+    'assistant_message',
+]);
+
+export function isDialogueTurn(message) {
+    if (!message || message.is_system || typeof message.is_user !== 'boolean') {
+        return false;
+    }
+    // Prompt-only rows (jailbreak, depth injects) have no speaker. Real chat turns always do.
+    if (!String(message.name ?? '').trim()) {
+        return false;
+    }
+    const kind = message.extra?.type;
+    if (typeof kind === 'string' && NON_DIALOGUE_TYPES.has(kind)) {
+        return false;
+    }
+    if (Array.isArray(message.extra?.tool_invocations) && message.extra.tool_invocations.length > 0) {
+        return false;
+    }
+    return Boolean(String(message.mes ?? '').trim());
+}
+
+export function findLastUserMessage(chat) {
+    const messages = Array.isArray(chat) ? chat : [];
+    for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index];
+        if (message?.is_user && isDialogueTurn(message)) {
+            return message;
+        }
+    }
+    return null;
+}
+
+export function preparePlanChat(chat, type) {
+    const messages = (Array.isArray(chat) ? chat : []).filter(message => {
+        // Tool rows are not dialogue, but they are the slot SillyTavern removes on swipe.
+        return !message?.is_system || Array.isArray(message?.extra?.tool_invocations);
+    });
+    if (String(type || '').toLowerCase() === 'swipe' && messages.length > 0) {
+        messages.pop();
+    }
+    return messages;
+}
+
+export function buildPlanContext(chat, tokenBudget = PLAN_CONTEXT_TOKEN_BUDGET) {
+    const lines = [];
+    for (const message of Array.isArray(chat) ? chat : []) {
+        if (!isDialogueTurn(message)) {
+            continue;
+        }
+        const role = message.is_user ? 'юзер' : 'асист';
+        lines.push(`${role}: ${String(message.mes).trim()}`);
+    }
+
+    if (lines.length === 0 || tokenBudget < 1) {
+        return '';
+    }
+
+    let start = lines.length - 1;
+    for (let index = lines.length - 1; index >= 0; index--) {
+        if (estimatePlanTokens(lines.slice(index).join('\n')) > tokenBudget) {
+            break;
+        }
+        start = index;
+    }
+
+    const tail = lines.slice(start).join('\n');
+    if (estimatePlanTokens(tail) <= tokenBudget) {
+        return tail;
+    }
+
+    return trimTextToTokenBudget(lines[lines.length - 1], tokenBudget);
+}
+
+function trimTextToTokenBudget(text, tokenBudget) {
+    const value = String(text ?? '');
+    let low = 0;
+    let high = value.length;
+    while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (estimatePlanTokens(value.slice(value.length - mid)) <= tokenBudget) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    return value.slice(value.length - low);
+}
+
+export function parsePlanNodes(data) {
+    const nodes = data?.nodes;
+    if (!Array.isArray(nodes) || nodes.length !== 10) {
+        return null;
+    }
+
+    const cleaned = [];
+    for (const node of nodes) {
+        const text = normalizeText(node);
+        if (!text) {
+            return null;
+        }
+        cleaned.push(text);
+    }
+    return cleaned;
+}
+
+export function formatPlanLine(nodes) {
+    const plan = nodes.map((node, index) => `${index + 1}. [${node}]`).join(' - ');
+    return `ВАЖНО!!! Адаптируй свой ответ под следующий план-структура сюжета: ${plan}. Не выходи из роли. Интерпретируй интересно.`;
+}
+
+export function appendPlanLine(text, planLine) {
+    const source = String(text ?? '');
+    const separator = source && !source.endsWith('\n') ? '\n' : '';
+    return `${source}${separator}${planLine}`;
+}
+
+export function isPlanApiOfflineError(error) {
+    if (!error || error.name === 'AbortError') {
+        return false;
+    }
+    // Browser fetch rejects with TypeError when nothing is listening on the plan API port.
+    if (error.name === 'TypeError') {
+        return true;
+    }
+    return /failed to fetch|networkerror|econnrefused|network request failed/i.test(String(error.message ?? ''));
+}
+
+export function createPlanRequestGate() {
+    let activeId = 0;
+    const listeners = new Set();
+
+    return {
+        begin() {
+            activeId += 1;
+            for (const listener of [...listeners]) {
+                listener();
+            }
+            return activeId;
+        },
+        isCurrent(requestId) {
+            return requestId === activeId;
+        },
+        subscribe(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+    };
+}

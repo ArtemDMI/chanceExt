@@ -2,7 +2,16 @@ import { getRequestHeaders } from '../../../../script.js';
 import {
     RANDOMIZER_SCHEMA,
     appendFailureMarker,
+    appendPlanLine,
+    buildPlanContext,
     buildRandomizerMessages,
+    estimatePlanTokens,
+    createPlanRequestGate,
+    isPlanApiOfflineError,
+    findLastUserMessage,
+    formatPlanLine,
+    preparePlanChat,
+    parsePlanNodes,
     parseRandomizerPayload,
     resolveRoll,
     selectTurnMessages,
@@ -12,6 +21,10 @@ const EXTENSION_NAME = 'ChanceExt';
 const INTERCEPTOR_NAME = 'chanceExtInterceptor';
 const RESULT_EXTRA_KEY = 'chanceExtRoll';
 const REQUEST_TIMEOUT_MS = 30_000;
+const PLAN_API_URL = 'http://127.0.0.1:8010/v1/plans';
+const PLAN_API_HEALTH_URL = 'http://127.0.0.1:8010/v1/health';
+const PLAN_REQUEST_TIMEOUT_MS = 6_000;
+const PLAN_HEALTH_TIMEOUT_MS = 2_000;
 const TOAST_OPTIONS = Object.freeze({
     timeOut: 10_000,
     extendedTimeOut: 3_000,
@@ -21,11 +34,13 @@ const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     bonusPercent: 20,
     model: 'google/gemini-3.8-flash',
+    planInjecting: false,
 });
 
 let settings = { ...DEFAULT_SETTINGS };
 const pendingResults = new Map();
 let chatObserver = null;
+const planRequests = createPlanRequestGate();
 
 function notifyError(message, error) {
     const details = error instanceof Error ? error.message : String(error ?? '');
@@ -52,6 +67,7 @@ function normalizeSettings(raw) {
         enabled: source.enabled !== false,
         bonusPercent: Number.isFinite(parsedBonus) ? Math.min(99, Math.max(0, parsedBonus)) : DEFAULT_SETTINGS.bonusPercent,
         model: String(source.model || DEFAULT_SETTINGS.model).trim(),
+        planInjecting: source.planInjecting === true,
     };
 }
 
@@ -72,6 +88,7 @@ function updateSettingsUi() {
     $('#chance_ext_enabled').prop('checked', settings.enabled);
     $('#chance_ext_bonus').val(settings.bonusPercent);
     $('#chance_ext_model').val(settings.model);
+    $('#chance_ext_plan_injecting').prop('checked', settings.planInjecting);
 }
 
 function bindSettingsUi() {
@@ -91,6 +108,11 @@ function bindSettingsUi() {
     $('#chance_ext_model').on('change', event => {
         settings.model = String(event.target.value || '').trim() || DEFAULT_SETTINGS.model;
         event.target.value = settings.model;
+        saveSettings();
+    });
+
+    $('#chance_ext_plan_injecting').on('change', event => {
+        settings.planInjecting = event.target.checked;
         saveSettings();
     });
 }
@@ -124,10 +146,16 @@ function extractProviderContent(data) {
     return content;
 }
 
-async function requestProbability(messages, model) {
+async function requestProbability(messages, model, cancelSignal) {
     const controller = new AbortController();
     // A stalled helper request must not leave this and all following generations waiting until a page reload.
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const onCancel = () => controller.abort();
+    if (cancelSignal?.aborted) {
+        controller.abort();
+    } else {
+        cancelSignal?.addEventListener?.('abort', onCancel, { once: true });
+    }
 
     // The SillyTavern backend keeps the OpenRouter secret server-side, so the extension never reads or stores the API key.
     try {
@@ -171,17 +199,183 @@ async function requestProbability(messages, model) {
 
         return parseRandomizerPayload(extractProviderContent(data));
     } catch (error) {
+        if (cancelSignal?.aborted) {
+            throw error;
+        }
         if (controller.signal.aborted) {
             throw new Error(`OpenRouter не ответил за ${REQUEST_TIMEOUT_MS / 1000} секунд`);
         }
         throw error;
     } finally {
         clearTimeout(timeoutId);
+        cancelSignal?.removeEventListener?.('abort', onCancel);
     }
 }
 
 function shouldProcessGeneration(type) {
     return !['quiet', 'impersonate', 'continue'].includes(String(type || '').toLowerCase());
+}
+
+function shouldRequestPlan(type) {
+    // quiet is an internal helper call; a story plan there would stall it and pollute its prompt.
+    return String(type || '').toLowerCase() !== 'quiet';
+}
+
+function notifyPlanApiOff() {
+    const message = 'Plan API выключен. Включите API';
+    console.error(`[${EXTENSION_NAME}] ${message}`);
+    toastr.error(message, EXTENSION_NAME, TOAST_OPTIONS);
+}
+
+function stopGeneration(abortGeneration) {
+    if (typeof abortGeneration === 'function') {
+        abortGeneration(true);
+    }
+}
+
+function notifyPlanSkipped(message, error) {
+    console.warn(`[${EXTENSION_NAME}] ${message}`, error ?? '');
+    toastr.warning(message, EXTENSION_NAME, {
+        ...TOAST_OPTIONS,
+        timeOut: 4_000,
+    });
+}
+
+async function requestPlanNodes(contextText, requestId, controller) {
+    // Stop waiting after 6s. The server still finishes this POST; a later body is not reused.
+    const timeoutId = setTimeout(() => controller.abort(), PLAN_REQUEST_TIMEOUT_MS);
+
+    try {
+        const response = await fetch(PLAN_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+            },
+            signal: controller.signal,
+            body: JSON.stringify({ context: contextText }),
+        });
+
+        if (!planRequests.isCurrent(requestId)) {
+            return null;
+        }
+        if (!response.ok) {
+            const body = await response.text();
+            throw new Error(`Plan API HTTP ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
+        }
+
+        const nodes = parsePlanNodes(await response.json());
+        if (!planRequests.isCurrent(requestId)) {
+            return null;
+        }
+        if (!nodes) {
+            throw new Error('Plan API returned an unexpected payload');
+        }
+        return nodes;
+    } catch (error) {
+        if (!planRequests.isCurrent(requestId)) {
+            return null;
+        }
+        if (isPlanApiOfflineError(error)) {
+            return { offline: true };
+        }
+        if (controller.signal.aborted) {
+            notifyPlanSkipped(`План не получен за ${PLAN_REQUEST_TIMEOUT_MS / 1000} с, генерация без него`);
+            return null;
+        }
+        notifyPlanSkipped('План не получен, генерация без него', error);
+        return null;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function probePlanApi(requestId) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), PLAN_HEALTH_TIMEOUT_MS);
+    const unsubscribe = planRequests.subscribe(() => {
+        if (!planRequests.isCurrent(requestId)) {
+            controller.abort();
+        }
+    });
+
+    try {
+        const response = await fetch(PLAN_API_HEALTH_URL, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+        });
+        if (!planRequests.isCurrent(requestId)) {
+            return 'superseded';
+        }
+        return response.ok ? 'online' : 'offline';
+    } catch {
+        if (!planRequests.isCurrent(requestId)) {
+            return 'superseded';
+        }
+        return 'offline';
+    } finally {
+        clearTimeout(timeoutId);
+        unsubscribe();
+    }
+}
+
+function startPlanRequest(type) {
+    // A new click gets its own POST. The API will not cancel or replace the previous one.
+    const requestId = planRequests.begin();
+    const cancel = new AbortController();
+    const planController = new AbortController();
+    const unsubscribe = planRequests.subscribe(() => {
+        if (!planRequests.isCurrent(requestId)) {
+            cancel.abort();
+            planController.abort();
+        }
+    });
+    const ready = probePlanApi(requestId);
+    // Saved chat only: the interceptor copy already contains reasoning, attachments, and regex prompt edits.
+    const source = preparePlanChat(SillyTavern.getContext().chat, type);
+    const contextText = findLastUserMessage(source) ? buildPlanContext(source) : '';
+
+    return {
+        requestId,
+        cancel,
+        unsubscribe,
+        ready,
+        task: ready.then(status => {
+            if (status === 'offline') {
+                return { offline: true };
+            }
+            if (status !== 'online' || !planRequests.isCurrent(requestId) || !contextText) {
+                if (!contextText && status === 'online') {
+                    console.info(`[${EXTENSION_NAME}] План пропущен: нет сообщения пользователя`);
+                }
+                return null;
+            }
+            console.info(`[${EXTENSION_NAME}] Запрос плана`, { requestId, tokens: estimatePlanTokens(contextText) });
+            return requestPlanNodes(contextText, requestId, planController);
+        }),
+    };
+}
+
+function applyPlanInjection(chat, nodes) {
+    if (!nodes) {
+        return;
+    }
+
+    const target = findLastUserMessage(chat);
+    if (!target) {
+        console.info(`[${EXTENSION_NAME}] План получен, но сообщение пользователя для вставки не найдено`);
+        return;
+    }
+
+    const planLine = formatPlanLine(nodes);
+    // Same prompt copy as the failure marker: the saved chat message stays unchanged.
+    target.mes = appendPlanLine(target.mes, planLine);
+    console.info(`[${EXTENSION_NAME}] План внедрён`, planLine);
+    toastr.info(planLine, EXTENSION_NAME, {
+        ...TOAST_OPTIONS,
+        timeOut: 6_000,
+    });
 }
 
 function getExpectedMessageId(type) {
@@ -307,54 +501,96 @@ function installResultUi() {
     renderAllResultIcons();
 }
 
-async function interceptGeneration(chat, _contextSize, _abort, type) {
-    if (!settings.enabled || !settings.model || !shouldProcessGeneration(type)) {
+async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
+    const runPlan = settings.planInjecting && shouldRequestPlan(type);
+    const runChance = settings.enabled && Boolean(settings.model) && shouldProcessGeneration(type);
+    if (!runPlan && !runChance) {
         return;
     }
 
-    const selection = selectTurnMessages(chat, 3);
-    if (!selection) {
-        console.info(`[${EXTENSION_NAME}] Проверка пропущена: последнее сообщение пользователя не найдено`);
-        return;
-    }
-
-    const messageId = getExpectedMessageId(type);
-    pendingResults.delete(messageId);
-    clearInheritedSwipeResult(type, messageId);
+    // Snapshot the dialogue before the dice marker is merged, then inject the plan last.
+    const planRun = runPlan ? startPlanRequest(type) : null;
 
     try {
-        console.info(`[${EXTENSION_NAME}] Проверка вероятности`, { type, messageId });
-        const action = await requestProbability(buildRandomizerMessages(selection), settings.model);
-        if (!action) {
-            const result = {
-                success: true,
-                noRoll: true,
-                bonusPercent: settings.bonusPercent,
-            };
-            pendingResults.set(messageId, result);
-            console.info(`[${EXTENSION_NAME}] УДАЧА: бросок не требуется`, { type, messageId });
-            notifyResult(result);
+        if (planRun) {
+            const status = await planRun.ready;
+            // API is off, or this click was replaced: do not start the main prompt.
+            if (status !== 'online') {
+                return;
+            }
+        }
+
+        if (!runChance) {
             return;
         }
 
-        const result = resolveRoll(action, settings.bonusPercent);
-        if (!result.success) {
-            // The interceptor receives SillyTavern's prompt copy, keeping the visible and saved user message untouched.
-            selection.target.mes = appendFailureMarker(selection.target.mes, result.failureText);
+        const selection = selectTurnMessages(chat, 3);
+        if (!selection) {
+            console.info(`[${EXTENSION_NAME}] Проверка пропущена: последнее сообщение пользователя не найдено`);
+            return;
         }
 
-        const storedResult = {
-            ...result,
-            noRoll: false,
-            bonusPercent: settings.bonusPercent,
-        };
-        pendingResults.set(messageId, storedResult);
-        console.info(`[${EXTENSION_NAME}] ${result.success ? 'УДАЧА' : 'НЕУДАЧА'}`, storedResult);
-        notifyResult(storedResult);
-    } catch (error) {
+        const messageId = getExpectedMessageId(type);
         pendingResults.delete(messageId);
-        // A helper-model outage must not prevent the user's main SillyTavern generation.
-        notifyError('Проверка вероятности пропущена', error);
+        clearInheritedSwipeResult(type, messageId);
+
+        try {
+            console.info(`[${EXTENSION_NAME}] Проверка вероятности`, { type, messageId });
+            const action = await requestProbability(buildRandomizerMessages(selection), settings.model, planRun?.cancel.signal);
+            if (!action) {
+                const result = {
+                    success: true,
+                    noRoll: true,
+                    bonusPercent: settings.bonusPercent,
+                };
+                pendingResults.set(messageId, result);
+                console.info(`[${EXTENSION_NAME}] УДАЧА: бросок не требуется`, { type, messageId });
+                notifyResult(result);
+                return;
+            }
+
+            const result = resolveRoll(action, settings.bonusPercent);
+            if (!result.success) {
+                // The interceptor receives SillyTavern's prompt copy, keeping the visible and saved user message untouched.
+                selection.target.mes = appendFailureMarker(selection.target.mes, result.failureText);
+            }
+
+            const storedResult = {
+                ...result,
+                noRoll: false,
+                bonusPercent: settings.bonusPercent,
+            };
+            pendingResults.set(messageId, storedResult);
+            console.info(`[${EXTENSION_NAME}] ${result.success ? 'УДАЧА' : 'НЕУДАЧА'}`, storedResult);
+            notifyResult(storedResult);
+        } catch (error) {
+            if (planRun?.cancel.signal.aborted) {
+                return;
+            }
+            pendingResults.delete(messageId);
+            // A helper-model outage must not prevent the user's main SillyTavern generation.
+            notifyError('Проверка вероятности пропущена', error);
+        }
+    } finally {
+        try {
+            if (planRun) {
+                const nodes = await planRun.task;
+                if (nodes?.offline) {
+                    if (planRequests.isCurrent(planRun.requestId)) {
+                        notifyPlanApiOff();
+                    }
+                    stopGeneration(abortGeneration);
+                } else if (planRequests.isCurrent(planRun.requestId)) {
+                    applyPlanInjection(chat, nodes);
+                } else {
+                    // The API answers every POST. This body belongs to the click that sent it, not the newer one.
+                    console.info(`[${EXTENSION_NAME}] План ${planRun.requestId} отброшен: уже есть более новый запрос`);
+                    stopGeneration(abortGeneration);
+                }
+            }
+        } finally {
+            planRun?.unsubscribe();
+        }
     }
 }
 

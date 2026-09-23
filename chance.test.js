@@ -3,6 +3,15 @@ import test from 'node:test';
 
 import {
     appendFailureMarker,
+    appendPlanLine,
+    buildPlanContext,
+    estimatePlanTokens,
+    formatPlanLine,
+    isPlanApiOfflineError,
+    createPlanRequestGate,
+    preparePlanChat,
+    parsePlanNodes,
+    PLAN_CONTEXT_TOKEN_BUDGET,
     effectivePercent,
     parseRandomizerPayload,
     resolveRoll,
@@ -45,4 +54,67 @@ test('appends failure marker without changing the original phrase', () => {
         appendFailureMarker('Прыгаю в машину', 'прыжок не удался'),
         'Прыгаю в машину ((Неудача попытки {{user}}: прыжок не удался))',
     );
+});
+
+test('sends dialogue only and keeps the newest lines inside the padded token budget', () => {
+    assert.equal(PLAN_CONTEXT_TOKEN_BUDGET, Math.round(2500 * 1.3));
+
+    const chat = [
+        { name: 'Sys', is_user: false, is_system: true, mes: 'SYSTEM INSTRUCTION' },
+        { name: 'System', is_user: false, is_system: false, mes: 'следуй инструкции', extra: { type: 'narrator' } },
+        { name: 'Note', is_user: false, is_system: false, mes: 'скрытый комментарий', extra: { type: 'comment' } },
+        { is_user: true, mes: 'JAILBREAK PROMPT' },
+        { name: 'Tool', is_user: false, is_system: true, mes: 'tool call', extra: { tool_invocations: [{}] } },
+        { name: 'User', is_user: true, is_system: false, mes: 'старое' },
+        { name: 'Char', is_user: false, is_system: false, mes: 'ответ' },
+        { name: 'User', is_user: true, is_system: false, mes: 'новое' },
+    ];
+
+    assert.equal(
+        buildPlanContext(chat, 100000),
+        'юзер: старое\nасист: ответ\nюзер: новое',
+    );
+    assert.equal(
+        buildPlanContext(preparePlanChat(chat, 'swipe'), 100000),
+        'юзер: старое\nасист: ответ',
+    );
+
+    const lastLine = 'юзер: новое';
+    assert.equal(buildPlanContext(chat, estimatePlanTokens(lastLine)), lastLine);
+    assert.equal(buildPlanContext(chat, 1).includes('старое'), false);
+});
+
+test('treats a dead plan API socket as offline and ignores an aborted wait', () => {
+    assert.equal(isPlanApiOfflineError(new TypeError('Failed to fetch')), true);
+    assert.equal(isPlanApiOfflineError(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })), false);
+});
+
+test('keeps each plan request tied to the click that sent it', () => {
+    const gate = createPlanRequestGate();
+    const first = gate.begin();
+    let previousStillCurrent = true;
+    gate.subscribe(() => {
+        previousStillCurrent = gate.isCurrent(first);
+    });
+
+    const second = gate.begin();
+
+    assert.equal(first, 1);
+    assert.equal(second, 2);
+    assert.equal(previousStillCurrent, false);
+    assert.equal(gate.isCurrent(second), true);
+});
+
+test('formats one plan line and appends it after the user turn', () => {
+    const nodes = ['паника', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег', 'внезапные события'];
+    assert.deepEqual(parsePlanNodes({ nodes }), nodes);
+    assert.equal(parsePlanNodes({ nodes: nodes.slice(0, 9) }), null);
+
+    const line = formatPlanLine(nodes);
+    assert.equal(
+        line,
+        'ВАЖНО!!! Адаптируй свой ответ под следующий план-структура сюжета: 1. [паника] - 2. [разговор] - 3. [тишина] - 4. [шаг] - 5. [дверь] - 6. [свет] - 7. [голос] - 8. [выбор] - 9. [бег] - 10. [внезапные события]. Не выходи из роли. Интерпретируй интересно.',
+    );
+    assert.equal(line.includes('\n'), false);
+    assert.equal(appendPlanLine('я прыгаю', line), `я прыгаю\n${line}`);
 });
