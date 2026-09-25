@@ -404,7 +404,7 @@ export function blockPlanNode(nodes, blockedText) {
 
 export function formatPlanLine(nodes) {
     const plan = nodes.map((node, index) => `${index + 1}. [${node}]`).join(' - ');
-    return `ВАЖНО!!! Адаптируй свой ответ под следующий план-структура сюжета: ${plan}. Не выходи из роли. Интерпретируй интересно.`;
+    return `ВАЖНО!!! Адаптируй свой ответ под следующий план-структура сюжета: ${plan}. Структура рекомендательная и абстрактная, подлежит очень широкой свободной интерпретации. Допускается пропускать нелогичные и не соответствующие логике и сюжету пункты, но не более 30%. Не выходи из роли.`;
 }
 
 export function appendPlanLine(text, planLine) {
