@@ -15,7 +15,9 @@ import {
     isPlanApiOfflineError,
     createPlanRequestGate,
     preparePlanChat,
+    parsePlanDisplay,
     parsePlanNodes,
+    PLAN_DISPLAY_SEPARATOR,
     PLAN_CONTEXT_TOKEN_BUDGET,
     effectivePercent,
     parseRandomizerPayload,
@@ -144,6 +146,13 @@ test('formats one plan line and appends it after the user turn', () => {
     const nodes = ['паника', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег', 'внезапные события'];
     assert.deepEqual(parsePlanNodes({ nodes }), nodes);
     assert.equal(parsePlanNodes({ nodes: nodes.slice(0, 9) }), null);
+    assert.equal(PLAN_DISPLAY_SEPARATOR, ' | ');
+
+    const display = nodes.join(PLAN_DISPLAY_SEPARATOR);
+    assert.deepEqual(parsePlanDisplay(display), nodes);
+    assert.deepEqual(parsePlanNodes({ display }), nodes);
+    assert.equal(parsePlanDisplay(nodes.join(' -- ')), null);
+    assert.equal(parsePlanDisplay('паника <|node|> успокоение'), null);
 
     const withGaps = ['паника', ' ', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', ' '];
     assert.deepEqual(parsePlanNodes({ nodes: withGaps }), withGaps);

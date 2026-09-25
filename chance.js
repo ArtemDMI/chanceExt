@@ -299,6 +299,8 @@ function trimTextToTokenBudget(text, tokenBudget) {
 }
 
 const MISSING_PLAN_NODE = ' ';
+// Display joins nodes with this exact separator. The model token <|node|> is not part of the response.
+export const PLAN_DISPLAY_SEPARATOR = ' | ';
 
 export function normalizePlanTemperature(value) {
     if (value === null || value === undefined) {
@@ -326,8 +328,7 @@ export function buildPlanRequestBody(context, temperature) {
     return body;
 }
 
-export function parsePlanNodes(data) {
-    const nodes = data?.nodes;
+function parseNodeList(nodes) {
     if (!Array.isArray(nodes) || nodes.length !== 10) {
         return null;
     }
@@ -349,6 +350,22 @@ export function parsePlanNodes(data) {
         cleaned.push(text);
     }
     return cleaned;
+}
+
+export function parsePlanDisplay(display) {
+    const text = String(display ?? '').trim();
+    if (!text.includes(PLAN_DISPLAY_SEPARATOR)) {
+        return null;
+    }
+    return parseNodeList(text.split(PLAN_DISPLAY_SEPARATOR));
+}
+
+export function parsePlanNodes(data) {
+    const fromNodes = parseNodeList(data?.nodes);
+    if (fromNodes) {
+        return fromNodes;
+    }
+    return parsePlanDisplay(data?.display);
 }
 
 function planNodeKey(value) {
