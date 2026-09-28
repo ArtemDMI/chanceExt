@@ -15,7 +15,7 @@ import {
     isPlanApiOfflineError,
     createPlanRequestGate,
     preparePlanChat,
-    findLastDialogueMessage,
+    appendPlanToFinalChat,
     parsePlanDisplay,
     parsePlanNodes,
     PLAN_DISPLAY_SEPARATOR,
@@ -143,11 +143,16 @@ test('keeps only the first nodes allowed for injection', () => {
     assert.equal(formatPlanLine(limitPlanNodes(nodes, 4)).includes('4. [шаг]'), true);
 });
 
-test('injects the plan onto the last dialogue turn of the request', () => {
-    const user = { name: 'User', is_user: true, is_system: false, mes: 'я прыгаю' };
-    const assistant = { name: 'Char', is_user: false, is_system: false, mes: 'летит' };
-    assert.equal(findLastDialogueMessage([user, assistant]), assistant);
-    assert.equal(findLastDialogueMessage([user]), user);
+test('places the plan after prompts that SillyTavern appends past the chat', () => {
+    const chat = [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'ход' },
+        { role: 'system', content: '# Reasoning Instructions' },
+    ];
+    appendPlanToFinalChat(chat, 'PLAN');
+    assert.equal(chat.at(-1).role, 'user');
+    assert.equal(chat.at(-1).content, 'PLAN');
+    assert.equal(chat[2].content, '# Reasoning Instructions');
 });
 
 test('formats one plan line and appends it after the user turn', () => {

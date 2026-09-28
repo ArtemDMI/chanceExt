@@ -10,7 +10,7 @@ import {
     estimatePlanTokens,
     createPlanRequestGate,
     isPlanApiOfflineError,
-    findLastDialogueMessage,
+    appendPlanToFinalChat,
     findLastUserMessage,
     formatPlanLine,
     limitPlanNodes,
@@ -50,6 +50,7 @@ let settings = { ...DEFAULT_SETTINGS };
 const pendingResults = new Map();
 let chatObserver = null;
 const planRequests = createPlanRequestGate();
+let pendingPlanLine = null;
 
 function notifyError(message, error) {
     const details = error instanceof Error ? error.message : String(error ?? '');
@@ -390,22 +391,43 @@ function startPlanRequest(type) {
     };
 }
 
-function applyPlanInjection(chat, nodes) {
+function queuePlanForEnd(nodes) {
     if (!nodes) {
+        pendingPlanLine = null;
         return;
     }
+    pendingPlanLine = formatPlanLine(limitPlanNodes(blockPlanNode(nodes, settings.planBlockedNode), settings.planNodeCount));
+}
 
-    // The interceptor chat is the prompt copy. The last dialogue turn is the end of that request.
-    const target = findLastDialogueMessage(chat);
-    if (!target) {
-        console.info(`[${EXTENSION_NAME}] План получен, но в запросе нет реплики для вставки`);
+function placePendingPlan(chat) {
+    const planLine = pendingPlanLine;
+    if (!planLine || !Array.isArray(chat)) {
         return;
     }
+    appendPlanToFinalChat(chat, planLine);
+    pendingPlanLine = null;
+    console.info(`[${EXTENSION_NAME}] План поставлен в конец запроса`, planLine);
+}
 
-    const planLine = formatPlanLine(limitPlanNodes(blockPlanNode(nodes, settings.planBlockedNode), settings.planNodeCount));
-    // Same prompt copy as the failure marker: the saved chat message stays unchanged.
-    target.mes = appendPlanLine(target.mes, planLine);
-    console.info(`[${EXTENSION_NAME}] План внедрён`, planLine);
+function installPlanFinalizer() {
+    const context = SillyTavern.getContext();
+    // The finished chat-completion list already includes prompts that SillyTavern adds after the interceptor.
+    context.eventSource.on(context.eventTypes.CHAT_COMPLETION_PROMPT_READY, eventData => {
+        if (eventData?.dryRun) {
+            return;
+        }
+        placePendingPlan(eventData?.chat);
+    });
+    context.eventSource.on(context.eventTypes.GENERATE_AFTER_DATA, (generateData, dryRun) => {
+        if (dryRun || !pendingPlanLine || typeof generateData?.prompt !== 'string') {
+            return;
+        }
+        generateData.prompt = appendPlanLine(generateData.prompt, pendingPlanLine);
+        pendingPlanLine = null;
+    });
+    context.eventSource.on(context.eventTypes.GENERATION_STOPPED, () => {
+        pendingPlanLine = null;
+    });
 }
 
 function getExpectedMessageId(type) {
@@ -611,7 +633,7 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
                     }
                     stopGeneration(abortGeneration);
                 } else if (planRequests.isCurrent(planRun.requestId)) {
-                    applyPlanInjection(chat, nodes);
+                    queuePlanForEnd(nodes);
                 } else {
                     // The API answers every POST. This body belongs to the click that sent it, not the newer one.
                     console.info(`[${EXTENSION_NAME}] План ${planRun.requestId} отброшен: уже есть более новый запрос`);
@@ -630,6 +652,7 @@ jQuery(async () => {
     try {
         loadSettings();
         installResultUi();
+        installPlanFinalizer();
         console.log(`[${EXTENSION_NAME}] Ready`);
     } catch (error) {
         notifyError('Ошибка запуска расширения', error);
