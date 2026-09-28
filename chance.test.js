@@ -9,6 +9,7 @@ import {
     buildPlanRequestBody,
     normalizePlanTemperature,
     estimatePlanTokens,
+    DEFAULT_PLAN_INJECT_PROMPT,
     formatPlanLine,
     limitPlanNodes,
     normalizePlanNodeCount,
@@ -173,7 +174,10 @@ test('formats one plan line and appends it after the user turn', () => {
     assert.equal(gapLine.includes('1. [паника] - 2. [ ]'), true);
     assert.equal(gapLine.includes('10. [ ]'), true);
 
-    const line = formatPlanLine(nodes);
+    const line = formatPlanLine(nodes, 'до {{plan}} после');
+    assert.equal(line.startsWith('до 1. [паника]'), true);
+    assert.equal(line.endsWith('после'), true);
+    assert.equal(formatPlanLine(nodes, DEFAULT_PLAN_INJECT_PROMPT).includes('{{plan}}'), false);
     assert.equal(line.includes('1. [паника] - 2. [разговор]'), true);
     assert.equal(line.includes('10. [внезапные события]'), true);
     assert.equal(line.includes('\n'), false);

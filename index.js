@@ -12,6 +12,7 @@ import {
     isPlanApiOfflineError,
     appendPlanToFinalChat,
     findLastUserMessage,
+    DEFAULT_PLAN_INJECT_PROMPT,
     formatPlanLine,
     limitPlanNodes,
     normalizePlanNodeCount,
@@ -44,6 +45,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     planTemperature: null,
     planBlockedNode: '',
     planNodeCount: 10,
+    planInjectPrompt: DEFAULT_PLAN_INJECT_PROMPT,
 });
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -81,6 +83,7 @@ function normalizeSettings(raw) {
         planTemperature: normalizePlanTemperature(source.planTemperature),
         planBlockedNode: String(source.planBlockedNode ?? '').trim(),
         planNodeCount: normalizePlanNodeCount(source.planNodeCount),
+        planInjectPrompt: String(source.planInjectPrompt ?? '').trim() || DEFAULT_PLAN_INJECT_PROMPT,
     };
 }
 
@@ -105,6 +108,7 @@ function updateSettingsUi() {
     $('#chance_ext_plan_temperature').val(settings.planTemperature ?? '');
     $('#chance_ext_plan_blocked_node').val(settings.planBlockedNode);
     $('#chance_ext_plan_node_count').val(settings.planNodeCount);
+    $('#chance_ext_plan_inject_prompt').val(settings.planInjectPrompt);
 }
 
 function bindSettingsUi() {
@@ -147,6 +151,12 @@ function bindSettingsUi() {
     $('#chance_ext_plan_node_count').on('change', event => {
         settings.planNodeCount = normalizePlanNodeCount(event.target.value);
         event.target.value = settings.planNodeCount;
+        saveSettings();
+    });
+
+    $('#chance_ext_plan_inject_prompt').on('change', event => {
+        settings.planInjectPrompt = String(event.target.value ?? '').trim() || DEFAULT_PLAN_INJECT_PROMPT;
+        event.target.value = settings.planInjectPrompt;
         saveSettings();
     });
 }
@@ -396,7 +406,10 @@ function queuePlanForEnd(nodes) {
         pendingPlanLine = null;
         return;
     }
-    pendingPlanLine = formatPlanLine(limitPlanNodes(blockPlanNode(nodes, settings.planBlockedNode), settings.planNodeCount));
+    pendingPlanLine = formatPlanLine(
+        limitPlanNodes(blockPlanNode(nodes, settings.planBlockedNode), settings.planNodeCount),
+        settings.planInjectPrompt,
+    );
 }
 
 function placePendingPlan(chat) {

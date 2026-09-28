@@ -17,6 +17,11 @@
     opacity: 0.75;
 }
 
+#chance_ext_plan_inject_prompt {
+    min-height: 8rem;
+    resize: vertical;
+}
+
 #chat .mes.chance-ext-has-result .mes_block {
     position: relative;
 }
