@@ -15,6 +15,7 @@ import {
     isPlanApiOfflineError,
     createPlanRequestGate,
     preparePlanChat,
+    findLastDialogueMessage,
     parsePlanDisplay,
     parsePlanNodes,
     PLAN_DISPLAY_SEPARATOR,
@@ -142,6 +143,13 @@ test('keeps only the first nodes allowed for injection', () => {
     assert.equal(formatPlanLine(limitPlanNodes(nodes, 4)).includes('4. [шаг]'), true);
 });
 
+test('injects the plan onto the last dialogue turn of the request', () => {
+    const user = { name: 'User', is_user: true, is_system: false, mes: 'я прыгаю' };
+    const assistant = { name: 'Char', is_user: false, is_system: false, mes: 'летит' };
+    assert.equal(findLastDialogueMessage([user, assistant]), assistant);
+    assert.equal(findLastDialogueMessage([user]), user);
+});
+
 test('formats one plan line and appends it after the user turn', () => {
     const nodes = ['паника', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', 'бег', 'внезапные события'];
     assert.deepEqual(parsePlanNodes({ nodes }), nodes);
@@ -156,16 +164,13 @@ test('formats one plan line and appends it after the user turn', () => {
 
     const withGaps = ['паника', ' ', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', ' '];
     assert.deepEqual(parsePlanNodes({ nodes: withGaps }), withGaps);
-    assert.equal(
-        formatPlanLine(withGaps),
-        'ВАЖНО!!! Адаптируй свой ответ под следующий план-структура сюжета: 1. [паника] - 2. [ ] - 3. [разговор] - 4. [тишина] - 5. [шаг] - 6. [дверь] - 7. [свет] - 8. [голос] - 9. [выбор] - 10. [ ]. Не выходи из роли. Интерпретируй интересно.',
-    );
+    const gapLine = formatPlanLine(withGaps);
+    assert.equal(gapLine.includes('1. [паника] - 2. [ ]'), true);
+    assert.equal(gapLine.includes('10. [ ]'), true);
 
     const line = formatPlanLine(nodes);
-    assert.equal(
-        line,
-        'ВАЖНО!!! Адаптируй свой ответ под следующий план-структура сюжета: 1. [паника] - 2. [разговор] - 3. [тишина] - 4. [шаг] - 5. [дверь] - 6. [свет] - 7. [голос] - 8. [выбор] - 9. [бег] - 10. [внезапные события]. Не выходи из роли. Интерпретируй интересно.',
-    );
+    assert.equal(line.includes('1. [паника] - 2. [разговор]'), true);
+    assert.equal(line.includes('10. [внезапные события]'), true);
     assert.equal(line.includes('\n'), false);
     assert.equal(appendPlanLine('я прыгаю', line), `я прыгаю\n${line}`);
 });

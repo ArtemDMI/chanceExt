@@ -10,6 +10,7 @@ import {
     estimatePlanTokens,
     createPlanRequestGate,
     isPlanApiOfflineError,
+    findLastDialogueMessage,
     findLastUserMessage,
     formatPlanLine,
     limitPlanNodes,
@@ -394,9 +395,10 @@ function applyPlanInjection(chat, nodes) {
         return;
     }
 
-    const target = findLastUserMessage(chat);
+    // The interceptor chat is the prompt copy. The last dialogue turn is the end of that request.
+    const target = findLastDialogueMessage(chat);
     if (!target) {
-        console.info(`[${EXTENSION_NAME}] План получен, но сообщение пользователя для вставки не найдено`);
+        console.info(`[${EXTENSION_NAME}] План получен, но в запросе нет реплики для вставки`);
         return;
     }
 
