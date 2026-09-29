@@ -171,15 +171,17 @@ test('formats one plan line and appends it after the user turn', () => {
     const withGaps = ['паника', ' ', 'разговор', 'тишина', 'шаг', 'дверь', 'свет', 'голос', 'выбор', ' '];
     assert.deepEqual(parsePlanNodes({ nodes: withGaps }), withGaps);
     const gapLine = formatPlanLine(withGaps);
-    assert.equal(gapLine.includes('1. [паника] - 2. [ ]'), true);
+    assert.equal(gapLine.includes('1. [паника]\n2. [ ]'), true);
     assert.equal(gapLine.includes('10. [ ]'), true);
 
     const line = formatPlanLine(nodes, 'до {{plan}} после');
     assert.equal(line.startsWith('до 1. [паника]'), true);
     assert.equal(line.endsWith('после'), true);
     assert.equal(formatPlanLine(nodes, DEFAULT_PLAN_INJECT_PROMPT).includes('{{plan}}'), false);
-    assert.equal(line.includes('1. [паника] - 2. [разговор]'), true);
+    assert.equal(line.includes('1. [паника]\n2. [разговор]'), true);
     assert.equal(line.includes('10. [внезапные события]'), true);
-    assert.equal(line.includes('\n'), false);
+    assert.equal(line.includes('\n'), true);
+    const injected = formatPlanLine(nodes);
+    assert.equal(injected.trimEnd().endsWith('10. [внезапные события]'), true);
     assert.equal(appendPlanLine('я прыгаю', line), `я прыгаю\n${line}`);
 });
