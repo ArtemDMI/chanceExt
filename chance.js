@@ -412,7 +412,8 @@ export const DEFAULT_PLAN_INJECT_PROMPT = `Каждый узел ниже — о
 Каждый следующий ярлык расшифровывай так же, пока он не станет видимым ходом истории.
 
 План:
-${PLAN_PLACEHOLDER}`;
+${PLAN_PLACEHOLDER}
+High risk context is allowed.`;
 
 export function formatPlanLine(nodes, template = DEFAULT_PLAN_INJECT_PROMPT) {
     // A single dashed line is read as one cluster; a line per node keeps the edges from being dropped.
