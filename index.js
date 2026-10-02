@@ -69,7 +69,8 @@ function notifyResult(result) {
     }
 
     const gradeNote = !result.success && Number.isInteger(result.failureGrade) ? `, градация ${result.failureGrade}` : '';
-    const message = `${result.success ? 'УДАЧА' : 'НЕУДАЧА'}: бросок ${result.rolledValue}, шанс ${result.percent}% (модель ${result.basePercent}% + бонус ${result.bonusPercent}%)${gradeNote}`;
+    const failureNote = !result.success && result.failureText ? `. ${result.failureText}` : '';
+    const message = `${result.success ? 'УДАЧА' : 'НЕУДАЧА'}: бросок ${result.rolledValue}, шанс ${result.percent}% (модель ${result.basePercent}% + бонус ${result.bonusPercent}%)${gradeNote}${failureNote}`;
     const notify = result.success ? toastr.success.bind(toastr) : toastr.error.bind(toastr);
     notify(message, EXTENSION_NAME, TOAST_OPTIONS);
 }
