@@ -615,7 +615,23 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
         try {
             const failureGrade = rollFailureGrade();
             console.info(`[${EXTENSION_NAME}] Проверка вероятности`, { type, messageId, failureGrade });
-            const action = await requestProbability(buildRandomizerMessages(selection, failureGrade), settings.model, planRun?.cancel.signal);
+            const messages = buildRandomizerMessages(selection, failureGrade);
+            let action;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    action = await requestProbability(messages, settings.model, planRun?.cancel.signal);
+                    break;
+                } catch (error) {
+                    if (planRun?.cancel.signal.aborted) {
+                        return;
+                    }
+                    if (attempt === 2) {
+                        throw error;
+                    }
+                    // One refusal or transport error gets a second request. A second failure skips the roll.
+                    console.info(`[${EXTENSION_NAME}] Повтор проверки вероятности`, { type, messageId, error });
+                }
+            }
             if (!action) {
                 const result = {
                     success: true,
