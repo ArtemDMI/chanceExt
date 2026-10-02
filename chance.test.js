@@ -30,8 +30,10 @@ import {
     selectTurnMessages,
 } from './chance.js';
 
-test('selects three messages before the latest user message', () => {
+test('selects five messages before the latest user message', () => {
     const chat = [
+        { is_user: true, mes: 'older' },
+        { is_user: false, mes: 'old answer' },
         { is_user: true, mes: 'old' },
         { is_user: false, mes: 'answer one' },
         { is_user: true, mes: 'question two' },
@@ -39,10 +41,16 @@ test('selects three messages before the latest user message', () => {
         { is_user: true, mes: 'target' },
     ];
 
-    const selected = selectTurnMessages(chat, 3);
+    const selected = selectTurnMessages(chat, 5);
 
     assert.equal(selected.target.mes, 'target');
-    assert.deepEqual(selected.context.map(message => message.mes), ['answer one', 'question two', 'answer two']);
+    assert.deepEqual(selected.context.map(message => message.mes), [
+        'old answer',
+        'old',
+        'answer one',
+        'question two',
+        'answer two',
+    ]);
 });
 
 test('adds bonus and caps effective chance at 99', () => {
@@ -55,7 +63,7 @@ test('rolls a failure grade from 1 to 5 and titles it in the request', () => {
     const high = { getRandomValues(values) { values[0] = 4; } };
     assert.equal(rollFailureGrade(low), 1);
     assert.equal(rollFailureGrade(high), 5);
-    assert.match(RANDOMIZER_SYSTEM_PROMPT, /камеры фиксируют его лицо и силуэт/);
+    assert.match(RANDOMIZER_SYSTEM_PROMPT, /потерял 3 из 6 мешков с деньгами/);
 
     const messages = buildRandomizerMessages({
         target: { is_user: true, mes: 'Я захожу в хранилище' },

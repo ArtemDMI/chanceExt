@@ -591,7 +591,7 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
             return;
         }
 
-        const selection = selectTurnMessages(chat, 3);
+        const selection = selectTurnMessages(chat, 5);
         if (!selection) {
             console.info(`[${EXTENSION_NAME}] Проверка пропущена: последнее сообщение пользователя не найдено`);
             return;
