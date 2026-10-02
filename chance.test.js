@@ -23,7 +23,10 @@ import {
     PLAN_CONTEXT_TOKEN_BUDGET,
     effectivePercent,
     parseRandomizerPayload,
+    RANDOMIZER_SYSTEM_PROMPT,
     resolveRoll,
+    rollFailureGrade,
+    buildRandomizerMessages,
     selectTurnMessages,
 } from './chance.js';
 
@@ -45,6 +48,21 @@ test('selects three messages before the latest user message', () => {
 test('adds bonus and caps effective chance at 99', () => {
     assert.equal(effectivePercent(10, 20), 30);
     assert.equal(effectivePercent(90, 20), 99);
+});
+
+test('rolls a failure grade from 1 to 5 and titles it in the request', () => {
+    const low = { getRandomValues(values) { values[0] = 0; } };
+    const high = { getRandomValues(values) { values[0] = 4; } };
+    assert.equal(rollFailureGrade(low), 1);
+    assert.equal(rollFailureGrade(high), 5);
+    assert.match(RANDOMIZER_SYSTEM_PROMPT, /камеры фиксируют его лицо и силуэт/);
+
+    const messages = buildRandomizerMessages({
+        target: { is_user: true, mes: 'Я захожу в хранилище' },
+        context: [],
+    }, 3);
+    const gradeMessage = messages.find(message => message.content.includes('градация_неудачи'));
+    assert.equal(gradeMessage.content.includes('Градация неудачи: 3'), true);
 });
 
 test('parses strict roll response and resolves d100', () => {

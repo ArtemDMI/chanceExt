@@ -23,7 +23,7 @@ export const RANDOMIZER_SCHEMA = {
                     failure_text: {
                         type: 'string',
                         minLength: 1,
-                        maxLength: 256,
+                        maxLength: 400,
                     },
                 },
             },
@@ -41,16 +41,38 @@ export const RANDOMIZER_SYSTEM_PROMPT = `
 Ты — скрытый оценщик вероятности успеха действия игрока.
 Оценивай только последнее сообщение пользователя. Предыдущие сообщения используй только как контекст сцены, отношений и препятствий.
 
+В отдельном сообщении есть блок «Градация неудачи». Число в нём — от 1 до 5. Это не бросок удачи и не вероятность. Это степень, насколько сильно рушатся ожидания персонажа, если попытка провалится. Успех или провал броска решает код. Если бросок успешен, текст не используется, поэтому исход удачи не пиши.
+
+Шкала градации:
+1 — полная неудача: задуманное не начинается.
+2 — почти полная неудача: получается только первый шаг, дальше путь закрыт.
+3 — неудача: часть задуманного выходит, но цель срывает заметная помеха.
+4 — лёгкая неудача, почти удача: цель почти достигнута, но в конце есть явная проблема.
+5 — почти удача, но с оговорками: задуманное происходит, однако остаётся скрытое последствие.
+
+failure_text — одно или два коротких предложения на языке сцены, не длиннее 400 символов, и только для присланной градации.
+Свяжи текст с тем, что заявил персонаж: опиши, какая часть уже получилась и где ожидание ломается.
+Не пиши остальные градации, список, процент внутри текста и не решай, успешен ли бросок.
+
+Пример. Персонаж хочет украсть деньги из хранилища и говорит: «Я захожу в хранилище, краду все деньги и выхожу».
+Если прислана градация 3, верни процент успеха и только такой failure_text:
+«Персонаж открывает хранилище, заходит внутрь, срабатывает сирена, но дверь остаётся открытой».
+Для того же действия остальные градации выглядели бы так, но их возвращать не нужно:
+1. Персонаж не может открыть хранилище.
+2. Персонаж открывает хранилище, заходит внутрь, и двери захлопываются.
+3. Персонаж открывает хранилище, заходит внутрь, срабатывает сирена, но дверь остаётся открытой.
+4. Персонаж забирает деньги, но на выходе видит полицейских, и полицейские видят его.
+5. Всё идёт так, как говорит персонаж, но на выходе он видит полицейских, которые пока его не замечают; камеры фиксируют его лицо и силуэт.
+
 Верни только JSON по переданной схеме.
 - Если сообщение не содержит неопределённой попытки получить преимущество, верни actions_for_roll: [].
 - Преимущество: награда, секс, деньги, добыча, доступ, спасение, победа, власть, контроль, полезный предмет или слишком удобный исход.
 - Не требуй проверки для обычной речи, вопросов, взглядов, жестов, ходьбы и простых перемещений.
 - Если подходящих действий несколько, выбери одно с самым низким шансом.
-- Верни чистую вероятность без скрытых бонусов; бонус добавит код.
-- Шкала: 0 — невозможно; 1–10 — почти невозможно; 11–30 — очень трудно или слишком рано;
+- Верни чистую вероятность успеха без скрытых бонусов; бонус добавит код.
+- Шкала percent: 0 — невозможно; 1–10 — почти невозможно; 11–30 — очень трудно или слишком рано;
   31–55 — трудно; 56–75 — возможно; 76–90 — вероятно; 91–99 — почти наверняка.
 - Никогда не возвращай 100.
-- failure_text — короткая фраза на языке сцены о том, что именно не удалось.
 - Не определяй успех броска: бросок выполняет код.
 `.trim();
 
@@ -86,7 +108,12 @@ export function selectTurnMessages(chat, contextCount = 3) {
     };
 }
 
-export function buildRandomizerMessages(selection) {
+export function buildRandomizerMessages(selection, failureGrade) {
+    const grade = Number(failureGrade);
+    if (!Number.isInteger(grade) || grade < 1 || grade > 5) {
+        throw new Error('Failure grade must be an integer from 1 to 5');
+    }
+
     const contextLines = selection.context.map((message, index) => {
         const role = message.is_user ? 'user' : 'assistant';
         return `Контекст ${index + 1} [${role}]: ${normalizeText(message.mes)}`;
@@ -104,6 +131,11 @@ export function buildRandomizerMessages(selection) {
         {
             role: 'user',
             content: `<latest_user_move>\n${normalizeText(selection.target.mes)}\n</latest_user_move>`,
+        },
+        {
+            role: 'user',
+            // The title is the only cue that this integer is severity, not the success percent.
+            content: `<градация_неудачи>\nГрадация неудачи: ${grade}\n</градация_неудачи>`,
         },
     ];
 }
@@ -131,7 +163,7 @@ export function parseRandomizerPayload(content) {
     const action = payload.actions_for_roll[0];
     const percent = action?.percent;
     const failureText = normalizeText(action?.failure_text);
-    if (!Number.isInteger(percent) || percent < 0 || percent > 99 || !failureText || failureText.length > 256) {
+    if (!Number.isInteger(percent) || percent < 0 || percent > 99 || !failureText || failureText.length > 400) {
         throw new Error('Invalid roll action');
     }
 
@@ -145,6 +177,22 @@ export function effectivePercent(basePercent, bonusPercent) {
     const base = Number.isFinite(Number(basePercent)) ? Math.trunc(Number(basePercent)) : 0;
     const bonus = Number.isFinite(Number(bonusPercent)) ? Math.trunc(Number(bonusPercent)) : 0;
     return Math.min(99, Math.max(0, base + bonus));
+}
+
+// Grade 5 is still a caveat line. A later d100 success injects nothing, so this roll only chooses how a failure reads.
+export function rollFailureGrade(cryptoApi = globalThis.crypto) {
+    const span = 5;
+    if (!cryptoApi?.getRandomValues) {
+        return Math.floor(Math.random() * span) + 1;
+    }
+
+    const values = new Uint32Array(1);
+    const acceptedRange = Math.floor(0x100000000 / span) * span;
+    do {
+        cryptoApi.getRandomValues(values);
+    } while (values[0] >= acceptedRange);
+
+    return (values[0] % span) + 1;
 }
 
 export function secureD100(cryptoApi = globalThis.crypto) {
@@ -169,6 +217,7 @@ export function resolveRoll(action, bonusPercent, roll = secureD100()) {
         rolledValue: roll,
         success: roll <= percent,
         failureText: action.failureText,
+        failureGrade: action.failureGrade,
     };
 }
 

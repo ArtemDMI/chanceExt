@@ -21,6 +21,7 @@ import {
     parsePlanNodes,
     parseRandomizerPayload,
     resolveRoll,
+    rollFailureGrade,
     selectTurnMessages,
 } from './chance.js';
 
@@ -66,7 +67,8 @@ function notifyResult(result) {
         return;
     }
 
-    const message = `${result.success ? 'УДАЧА' : 'НЕУДАЧА'}: бросок ${result.rolledValue}, шанс ${result.percent}% (модель ${result.basePercent}% + бонус ${result.bonusPercent}%)`;
+    const gradeNote = !result.success && Number.isInteger(result.failureGrade) ? `, градация ${result.failureGrade}` : '';
+    const message = `${result.success ? 'УДАЧА' : 'НЕУДАЧА'}: бросок ${result.rolledValue}, шанс ${result.percent}% (модель ${result.basePercent}% + бонус ${result.bonusPercent}%)${gradeNote}`;
     const notify = result.success ? toastr.success.bind(toastr) : toastr.error.bind(toastr);
     notify(message, EXTENSION_NAME, TOAST_OPTIONS);
 }
@@ -600,8 +602,9 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
         clearInheritedSwipeResult(type, messageId);
 
         try {
-            console.info(`[${EXTENSION_NAME}] Проверка вероятности`, { type, messageId });
-            const action = await requestProbability(buildRandomizerMessages(selection), settings.model, planRun?.cancel.signal);
+            const failureGrade = rollFailureGrade();
+            console.info(`[${EXTENSION_NAME}] Проверка вероятности`, { type, messageId, failureGrade });
+            const action = await requestProbability(buildRandomizerMessages(selection, failureGrade), settings.model, planRun?.cancel.signal);
             if (!action) {
                 const result = {
                     success: true,
@@ -614,6 +617,7 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
                 return;
             }
 
+            action.failureGrade = failureGrade;
             const result = resolveRoll(action, settings.bonusPercent);
             if (!result.success) {
                 // The interceptor receives SillyTavern's prompt copy, keeping the visible and saved user message untouched.
