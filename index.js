@@ -19,6 +19,7 @@ import {
     preparePlanChat,
     normalizePlanTemperature,
     parsePlanNodes,
+    clampBonusPercent,
     parseRandomizerPayload,
     resolveRoll,
     rollFailureGrade,
@@ -79,7 +80,7 @@ function normalizeSettings(raw) {
 
     return {
         enabled: source.enabled !== false,
-        bonusPercent: Number.isFinite(parsedBonus) ? Math.min(99, Math.max(0, parsedBonus)) : DEFAULT_SETTINGS.bonusPercent,
+        bonusPercent: clampBonusPercent(parsedBonus, DEFAULT_SETTINGS.bonusPercent),
         model: String(source.model || DEFAULT_SETTINGS.model).trim(),
         planInjecting: source.planInjecting === true,
         planTemperature: normalizePlanTemperature(source.planTemperature),
@@ -121,9 +122,19 @@ function bindSettingsUi() {
 
     $('#chance_ext_bonus').on('change input', event => {
         const parsed = Number.parseInt(event.target.value, 10);
-        settings.bonusPercent = Number.isFinite(parsed)
-            ? Math.min(99, Math.max(0, parsed))
-            : DEFAULT_SETTINGS.bonusPercent;
+        // "-" is not a number yet; snapping it to the default blocks typing a negative bonus.
+        if (!Number.isFinite(parsed)) {
+            if (event.type === 'change') {
+                settings.bonusPercent = DEFAULT_SETTINGS.bonusPercent;
+                event.target.value = settings.bonusPercent;
+                saveSettings();
+            }
+            return;
+        }
+        settings.bonusPercent = clampBonusPercent(parsed, DEFAULT_SETTINGS.bonusPercent);
+        if (event.type === 'change') {
+            event.target.value = settings.bonusPercent;
+        }
         saveSettings();
     });
 

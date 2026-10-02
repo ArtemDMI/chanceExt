@@ -180,10 +180,22 @@ export function parseRandomizerPayload(content) {
     };
 }
 
+export const BONUS_PERCENT_MIN = -100;
+export const BONUS_PERCENT_MAX = 99;
+
+export function clampBonusPercent(value, fallback) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.min(BONUS_PERCENT_MAX, Math.max(BONUS_PERCENT_MIN, parsed));
+}
+
 export function effectivePercent(basePercent, bonusPercent) {
     const base = Number.isFinite(Number(basePercent)) ? Math.trunc(Number(basePercent)) : 0;
     const bonus = Number.isFinite(Number(bonusPercent)) ? Math.trunc(Number(bonusPercent)) : 0;
-    return Math.min(99, Math.max(0, base + bonus));
+    // Dice is 1..100 and the model never returns 100, so a bonus of -100 floors the chance at 0 and always fails.
+    return Math.min(BONUS_PERCENT_MAX, Math.max(0, base + bonus));
 }
 
 // Grade 5 is still a caveat line. A later d100 success injects nothing, so this roll only chooses how a failure reads.

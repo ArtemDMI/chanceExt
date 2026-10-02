@@ -21,6 +21,7 @@ import {
     parsePlanNodes,
     PLAN_DISPLAY_SEPARATOR,
     PLAN_CONTEXT_TOKEN_BUDGET,
+    clampBonusPercent,
     effectivePercent,
     parseRandomizerPayload,
     RANDOMIZER_SYSTEM_PROMPT,
@@ -56,6 +57,10 @@ test('selects five messages before the latest user message', () => {
 test('adds bonus and caps effective chance at 99', () => {
     assert.equal(effectivePercent(10, 20), 30);
     assert.equal(effectivePercent(90, 20), 99);
+    assert.equal(effectivePercent(50, -40), 10);
+    assert.equal(effectivePercent(99, -100), 0);
+    assert.equal(clampBonusPercent(-150, 20), -100);
+    assert.equal(resolveRoll({ percent: 99, failureText: 'нет' }, -100, 1).success, false);
 });
 
 test('rolls a failure grade from 1 to 5 and titles it in the request', () => {
