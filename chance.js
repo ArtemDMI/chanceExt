@@ -457,17 +457,136 @@ export function limitPlanNodes(nodes, count) {
     return nodes.slice(0, normalizePlanNodeCount(count));
 }
 
-export function blockPlanNode(nodes, blockedText) {
-    const blocked = new Set(
+function blockedNodeKeys(blockedText) {
+    return new Set(
         String(blockedText ?? '')
             .split(',')
             .map(planNodeKey)
             .filter(Boolean),
     );
+}
+
+export function blockPlanNode(nodes, blockedText) {
+    const blocked = blockedNodeKeys(blockedText);
     if (blocked.size === 0 || !Array.isArray(nodes)) {
         return nodes;
     }
     return nodes.map(node => blocked.has(planNodeKey(node)) ? MISSING_PLAN_NODE : node);
+}
+
+export function parseNodeCatalog(text) {
+    const sections = [];
+    let current = [];
+
+    for (const rawLine of String(text ?? '').split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) {
+            continue;
+        }
+        // A dash line only splits sections. It is not a node, and neither is any line without " = N".
+        if (/^---+$/.test(line)) {
+            if (current.length > 0) {
+                sections.push(current);
+                current = [];
+            }
+            continue;
+        }
+        const match = /^(.*)\s=\s(\d+)$/.exec(line);
+        if (!match) {
+            continue;
+        }
+        const name = normalizeText(match[1]);
+        const weight = Number(match[2]);
+        if (!name || !Number.isInteger(weight)) {
+            continue;
+        }
+        current.push({ name, weight });
+    }
+
+    if (current.length > 0) {
+        sections.push(current);
+    }
+    return sections;
+}
+
+export function normalizePlanWeightFlatten(value) {
+    if (value === null || value === undefined) {
+        return 0;
+    }
+    const raw = String(value).trim().replace(',', '.');
+    if (!raw) {
+        return 0;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+        return 0;
+    }
+    return Math.min(1, Math.max(0, parsed));
+}
+
+function pickFromSection(section, weighted, flatten, random) {
+    // 0 keeps the file weights. 1 is a flat draw: the exponent is 1/T, and T runs from 1 to infinity.
+    const power = weighted ? 1 - flatten : 0;
+    if (power <= 0) {
+        return section[Math.floor(random() * section.length)].name;
+    }
+
+    const weights = section.map(node => (node.weight > 0 ? node.weight ** power : 0));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    if (total <= 0) {
+        return section[Math.floor(random() * section.length)].name;
+    }
+
+    let roll = random() * total;
+    for (let index = 0; index < section.length; index++) {
+        roll -= weights[index];
+        if (roll < 0) {
+            return section[index].name;
+        }
+    }
+    return section[section.length - 1].name;
+}
+
+function shuffleItems(items, random) {
+    const copy = items.slice();
+    for (let index = copy.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(random() * (index + 1));
+        const current = copy[index];
+        copy[index] = copy[swapIndex];
+        copy[swapIndex] = current;
+    }
+    return copy;
+}
+
+export function pickRandomPlanNodes(sections, count, options = {}) {
+    const random = typeof options.random === 'function' ? options.random : Math.random;
+    const weighted = options.weighted === true;
+    const flatten = weighted ? normalizePlanWeightFlatten(options.flatten) : 0;
+    const blocked = blockedNodeKeys(options.blockedText);
+    const limit = normalizePlanNodeCount(count);
+    const eligible = [];
+
+    for (const section of sections || []) {
+        const nodes = (section || []).filter(node => {
+            // Skip a forbidden name instead of leaving an empty slot, so this section can still contribute another node.
+            if (!node?.name || blocked.has(planNodeKey(node.name))) {
+                return false;
+            }
+            // A zero stays impossible until the draw is fully flat, same as a zero probability at finite temperature.
+            if (weighted && flatten < 1 && !(node.weight > 0)) {
+                return false;
+            }
+            return true;
+        });
+        if (nodes.length > 0) {
+            eligible.push(nodes);
+        }
+    }
+
+    // One node per section inside this request. The next call may use a section again.
+    return shuffleItems(eligible, random)
+        .slice(0, limit)
+        .map(section => pickFromSection(section, weighted, flatten, random));
 }
 
 export const PLAN_PLACEHOLDER = '{{plan}}';

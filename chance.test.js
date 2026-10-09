@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -13,12 +14,15 @@ import {
     formatPlanLine,
     limitPlanNodes,
     normalizePlanNodeCount,
+    normalizePlanWeightFlatten,
     isPlanApiOfflineError,
     createPlanRequestGate,
     preparePlanChat,
     appendPlanToFinalChat,
+    parseNodeCatalog,
     parsePlanDisplay,
     parsePlanNodes,
+    pickRandomPlanNodes,
     PLAN_DISPLAY_SEPARATOR,
     PLAN_CONTEXT_TOKEN_BUDGET,
     clampBonusPercent,
@@ -215,4 +219,119 @@ test('formats one plan line and appends it after the user turn', () => {
     const injected = formatPlanLine(nodes);
     assert.equal(injected.trimEnd().endsWith('10. [внезапные события]'), true);
     assert.equal(appendPlanLine('я прыгаю', line), `я прыгаю\n${line}`);
+});
+
+test('reads nodes before " = N" and never treats a separator as a node', () => {
+    const catalog = parseNodeCatalog([
+        'разговор = 10',
+        'описание сцены 2-6 предложения = 3',
+        '---',
+        'может быть = 1',
+        'возможно = 100',
+        '---',
+        '---',
+        'не нода',
+        'a = b = 5',
+        '',
+    ].join('\n'));
+
+    assert.equal(catalog.length, 3);
+    assert.deepEqual(catalog[0].map(node => node.name), ['разговор', 'описание сцены 2-6 предложения']);
+    assert.equal(catalog[1][1].weight, 100);
+    assert.deepEqual(catalog[2], [{ name: 'a = b', weight: 5 }]);
+    assert.equal(JSON.stringify(catalog).includes('---'), false);
+});
+
+test('takes one node from each section and can reuse a section on the next call', () => {
+    const catalog = parseNodeCatalog([
+        'разговор = 10',
+        'описание = 3',
+        '---',
+        'может быть = 1',
+        'возможно = 100',
+        '---',
+        'одна = 4',
+    ].join('\n'));
+    const picked = pickRandomPlanNodes(catalog, 10, {
+        weighted: false,
+        blockedText: 'может быть',
+        random: () => 0,
+    });
+
+    assert.equal(picked.length, 3);
+    assert.equal(picked.includes('разговор') && picked.includes('описание'), false);
+    assert.equal(picked.includes('может быть'), false);
+    assert.equal(picked.includes('возможно'), true);
+    assert.equal(picked.includes('одна'), true);
+
+    const only = [[{ name: 'одна', weight: 1 }]];
+    assert.deepEqual(pickRandomPlanNodes(only, 1, { weighted: false, random: () => 0 }), ['одна']);
+    assert.deepEqual(pickRandomPlanNodes(only, 1, { weighted: false, random: () => 0 }), ['одна']);
+});
+
+test('uses the digit as weight only when that switch is on', () => {
+    const section = [[{ name: 'редко', weight: 1 }, { name: 'часто', weight: 99 }]];
+    assert.deepEqual(
+        pickRandomPlanNodes(section, 1, { weighted: true, random: () => 0.5 }),
+        ['часто'],
+    );
+    assert.deepEqual(
+        pickRandomPlanNodes(section, 1, { weighted: false, random: () => 0 }),
+        ['редко'],
+    );
+    assert.deepEqual(
+        pickRandomPlanNodes([[{ name: 'пусто', weight: 0 }, { name: 'есть', weight: 2 }]], 1, {
+            weighted: true,
+            random: () => 0,
+        }),
+        ['есть'],
+    );
+    assert.deepEqual(
+        pickRandomPlanNodes([[{ name: 'пусто', weight: 0 }]], 1, { weighted: false, random: () => 0 }),
+        ['пусто'],
+    );
+});
+
+test('flattens digit weights toward an equal draw', () => {
+    const section = [[{ name: 'редко', weight: 1 }, { name: 'часто', weight: 100 }]];
+    assert.equal(normalizePlanWeightFlatten(''), 0);
+    assert.equal(normalizePlanWeightFlatten('0,5'), 0.5);
+    assert.equal(normalizePlanWeightFlatten(2), 1);
+    assert.deepEqual(
+        pickRandomPlanNodes(section, 1, { weighted: true, flatten: 0, random: () => 0.02 }),
+        ['часто'],
+    );
+    assert.deepEqual(
+        pickRandomPlanNodes(section, 1, { weighted: true, flatten: 0.5, random: () => 0.02 }),
+        ['редко'],
+    );
+    assert.deepEqual(
+        pickRandomPlanNodes(section, 1, { weighted: true, flatten: 1, random: () => 0 }),
+        ['редко'],
+    );
+    assert.deepEqual(
+        pickRandomPlanNodes([[{ name: 'пусто', weight: 0 }, { name: 'есть', weight: 2 }]], 1, {
+            weighted: true,
+            flatten: 1,
+            random: () => 0,
+        }),
+        ['пусто'],
+    );
+});
+
+test('nodes.txt is split into sections of real nodes', () => {
+    const sections = parseNodeCatalog(readFileSync(new URL('./nodes.txt', import.meta.url), 'utf8'));
+    assert.ok(sections.length > 1);
+    for (const section of sections) {
+        assert.ok(section.length > 0);
+        for (const node of section) {
+            assert.equal(node.name.includes('---'), false);
+            assert.equal(node.weight > 0, true);
+        }
+    }
+
+    const blockedName = sections[0][0].name;
+    const chain = pickRandomPlanNodes(sections, 4, { weighted: true, blockedText: blockedName });
+    assert.equal(chain.length, 4);
+    assert.equal(chain.includes(blockedName), false);
 });

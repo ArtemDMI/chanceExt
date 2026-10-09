@@ -8,12 +8,12 @@
             <div class="chance-ext-row">
                 <label class="checkbox_label" for="chance_ext_enabled">
                     <input id="chance_ext_enabled" type="checkbox">
-                    <span>Включить проверку вероятности</span>
+                    <span>Проверка вероятности</span>
                 </label>
             </div>
 
             <div class="chance-ext-row">
-                <label for="chance_ext_bonus">Бонус к вероятности, %</label>
+                <label for="chance_ext_bonus">Бонус, %</label>
                 <input
                     id="chance_ext_bonus"
                     class="text_pole"
@@ -26,7 +26,7 @@
             </div>
 
             <div class="chance-ext-row">
-                <label for="chance_ext_model">Модель OpenRouter</label>
+                <label for="chance_ext_model">Модель</label>
                 <input
                     id="chance_ext_model"
                     class="text_pole"
@@ -36,19 +36,72 @@
                     autocomplete="off"
                     spellcheck="false"
                 >
-                <small>Название вводится вручную, например: google/gemini-3.8-flash</small>
             </div>
+
+            <div class="chance-ext-section-title">Дополнительно</div>
 
             <div class="chance-ext-row">
                 <label class="checkbox_label" for="chance_ext_plan_injecting">
                     <input id="chance_ext_plan_injecting" type="checkbox">
-                    <span>Plan injecting</span>
+                    <span>Цепочка нод</span>
                 </label>
-                <small>Перед каждым запросом и свайпом запрашивает план и дописывает его в конец последнего сообщения пользователя.</small>
             </div>
 
             <div class="chance-ext-row">
-                <label for="chance_ext_plan_temperature">Температура плана</label>
+                <label for="chance_ext_plan_source">Источник</label>
+                <select id="chance_ext_plan_source" class="text_pole">
+                    <option value="api">API</option>
+                    <option value="file">Файл</option>
+                </select>
+            </div>
+
+            <div class="chance-ext-row">
+                <label for="chance_ext_plan_node_count">Нод в цепочке</label>
+                <input
+                    id="chance_ext_plan_node_count"
+                    class="text_pole"
+                    type="number"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value="10"
+                >
+            </div>
+
+            <div class="chance-ext-row">
+                <label for="chance_ext_plan_blocked_node">Запрещённые ноды</label>
+                <input
+                    id="chance_ext_plan_blocked_node"
+                    class="text_pole"
+                    type="text"
+                    placeholder="новый персонаж, паника"
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+            </div>
+
+            <div class="chance-ext-row chance-ext-plan-file-only is-hidden">
+                <label class="checkbox_label" for="chance_ext_plan_weighted">
+                    <input id="chance_ext_plan_weighted" type="checkbox">
+                    <span>Вероятность из цифр</span>
+                </label>
+            </div>
+
+            <div class="chance-ext-row chance-ext-plan-file-only chance-ext-plan-weight-only is-hidden">
+                <label for="chance_ext_plan_flatten">Плющитель вероятности</label>
+                <input
+                    id="chance_ext_plan_flatten"
+                    class="text_pole"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value="0"
+                >
+            </div>
+
+            <div class="chance-ext-row chance-ext-plan-api-only">
+                <label for="chance_ext_plan_temperature">Температура</label>
                 <input
                     id="chance_ext_plan_temperature"
                     class="text_pole"
@@ -59,34 +112,6 @@
                     placeholder="не задана"
                     autocomplete="off"
                 >
-                <small>Пусто — поле не отправляется. Введённое число от 0 до 2 уходит как generation.temperature.</small>
-            </div>
-
-            <div class="chance-ext-row">
-                <label for="chance_ext_plan_blocked_node">Блокировка ноды</label>
-                <input
-                    id="chance_ext_plan_blocked_node"
-                    class="text_pole"
-                    type="text"
-                    placeholder="новый персонаж, паника"
-                    autocomplete="off"
-                    spellcheck="false"
-                >
-                <small>Через запятую. Совпадение без учёта регистра и лишних пробелов заменяет ноду на пробел.</small>
-            </div>
-
-            <div class="chance-ext-row">
-                <label for="chance_ext_plan_node_count">Нод в инжекте</label>
-                <input
-                    id="chance_ext_plan_node_count"
-                    class="text_pole"
-                    type="number"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value="10"
-                >
-                <small>API всегда отдаёт 10. В промпт идут первые N.</small>
             </div>
 
             <div class="chance-ext-row">
@@ -97,7 +122,6 @@
                     rows="8"
                     spellcheck="false"
                 ></textarea>
-                <small>Хранится в настройках. {{plan}} заменяется списком нод.</small>
             </div>
         </div>
     </div>

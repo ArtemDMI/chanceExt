@@ -16,8 +16,11 @@ import {
     formatPlanLine,
     limitPlanNodes,
     normalizePlanNodeCount,
+    parseNodeCatalog,
+    pickRandomPlanNodes,
     preparePlanChat,
     normalizePlanTemperature,
+    normalizePlanWeightFlatten,
     parsePlanNodes,
     clampBonusPercent,
     parseRandomizerPayload,
@@ -47,6 +50,9 @@ const DEFAULT_SETTINGS = Object.freeze({
     planTemperature: null,
     planBlockedNode: '',
     planNodeCount: 10,
+    planSource: 'api',
+    planWeighted: true,
+    planWeightFlatten: 0,
     planInjectPrompt: DEFAULT_PLAN_INJECT_PROMPT,
 });
 
@@ -87,6 +93,10 @@ function normalizeSettings(raw) {
         planTemperature: normalizePlanTemperature(source.planTemperature),
         planBlockedNode: String(source.planBlockedNode ?? '').trim(),
         planNodeCount: normalizePlanNodeCount(source.planNodeCount),
+        planSource: source.planSource === 'file' ? 'file' : 'api',
+        // Digits in nodes.txt are the weights unless the switch is turned off.
+        planWeighted: source.planWeighted !== false,
+        planWeightFlatten: normalizePlanWeightFlatten(source.planWeightFlatten),
         planInjectPrompt: String(source.planInjectPrompt ?? '').trim() || DEFAULT_PLAN_INJECT_PROMPT,
     };
 }
@@ -112,7 +122,18 @@ function updateSettingsUi() {
     $('#chance_ext_plan_temperature').val(settings.planTemperature ?? '');
     $('#chance_ext_plan_blocked_node').val(settings.planBlockedNode);
     $('#chance_ext_plan_node_count').val(settings.planNodeCount);
+    $('#chance_ext_plan_source').val(settings.planSource);
+    $('#chance_ext_plan_weighted').prop('checked', settings.planWeighted);
+    $('#chance_ext_plan_flatten').val(settings.planWeightFlatten);
     $('#chance_ext_plan_inject_prompt').val(settings.planInjectPrompt);
+    syncPlanSourceRows();
+}
+
+function syncPlanSourceRows() {
+    const fromFile = settings.planSource === 'file';
+    $('.chance-ext-plan-file-only').toggleClass('is-hidden', !fromFile);
+    $('.chance-ext-plan-weight-only').toggleClass('is-hidden', !fromFile || !settings.planWeighted);
+    $('.chance-ext-plan-api-only').toggleClass('is-hidden', fromFile);
 }
 
 function bindSettingsUi() {
@@ -165,6 +186,24 @@ function bindSettingsUi() {
     $('#chance_ext_plan_node_count').on('change', event => {
         settings.planNodeCount = normalizePlanNodeCount(event.target.value);
         event.target.value = settings.planNodeCount;
+        saveSettings();
+    });
+
+    $('#chance_ext_plan_source').on('change', event => {
+        settings.planSource = event.target.value === 'file' ? 'file' : 'api';
+        saveSettings();
+        syncPlanSourceRows();
+    });
+
+    $('#chance_ext_plan_weighted').on('change', event => {
+        settings.planWeighted = event.target.checked;
+        saveSettings();
+        syncPlanSourceRows();
+    });
+
+    $('#chance_ext_plan_flatten').on('change', event => {
+        settings.planWeightFlatten = normalizePlanWeightFlatten(event.target.value);
+        event.target.value = settings.planWeightFlatten;
         saveSettings();
     });
 
@@ -299,6 +338,45 @@ function notifyPlanSkipped(message, error) {
     });
 }
 
+async function requestFilePlanNodes(requestId, controller) {
+    try {
+        const url = new URL('./nodes.txt', import.meta.url);
+        // The catalog is read on every request so edits show up without a reload.
+        url.searchParams.set('t', Date.now().toString());
+        const response = await fetch(url, {
+            cache: 'no-store',
+            signal: controller.signal,
+        });
+        if (!planRequests.isCurrent(requestId)) {
+            return null;
+        }
+        if (!response.ok) {
+            throw new Error(`nodes.txt: HTTP ${response.status}`);
+        }
+
+        const nodes = pickRandomPlanNodes(parseNodeCatalog(await response.text()), settings.planNodeCount, {
+            weighted: settings.planWeighted,
+            flatten: settings.planWeightFlatten,
+            blockedText: settings.planBlockedNode,
+        });
+        if (!planRequests.isCurrent(requestId)) {
+            return null;
+        }
+        if (nodes.length === 0) {
+            notifyPlanSkipped('В nodes.txt нет нод для цепочки');
+            return null;
+        }
+        console.info(`[${EXTENSION_NAME}] Цепочка из файла`, { requestId, nodes });
+        return nodes;
+    } catch (error) {
+        if (!planRequests.isCurrent(requestId) || error?.name === 'AbortError') {
+            return null;
+        }
+        notifyPlanSkipped('nodes.txt не прочитан, генерация без цепочки', error);
+        return null;
+    }
+}
+
 async function requestPlanNodes(contextText, requestId, controller) {
     // Stop waiting after 6s. The server still finishes this POST; a later body is not reused.
     const timeoutId = setTimeout(() => controller.abort(), PLAN_REQUEST_TIMEOUT_MS);
@@ -389,6 +467,17 @@ function startPlanRequest(type) {
             planController.abort();
         }
     });
+    if (settings.planSource === 'file') {
+        // File mode never calls the plan API, so a stopped API must not block this generation.
+        return {
+            requestId,
+            cancel,
+            unsubscribe,
+            ready: Promise.resolve('file'),
+            task: requestFilePlanNodes(requestId, planController),
+        };
+    }
+
     const ready = probePlanApi(requestId);
     // Saved chat only: the interceptor copy already contains reasoning, attachments, and regex prompt edits.
     const source = preparePlanChat(SillyTavern.getContext().chat, type);
@@ -594,7 +683,8 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
         if (planRun) {
             const status = await planRun.ready;
             // API is off, or this click was replaced: do not start the main prompt.
-            if (status !== 'online') {
+            // File mode is ready without the plan API. Only a dead API blocks the turn.
+            if (status !== 'online' && status !== 'file') {
                 return;
             }
         }
