@@ -612,12 +612,18 @@ export function formatPlanLine(nodes, template = DEFAULT_PLAN_INJECT_PROMPT) {
     return source.split(PLAN_PLACEHOLDER).join(plan);
 }
 
-export function appendPlanToFinalChat(chat, planLine) {
-    if (!planLine || !Array.isArray(chat)) {
+export function insertPlanAfterLastUser(chat, planLine) {
+    const target = findLastUserMessage(chat);
+    if (!planLine || !target) {
         return chat;
     }
-    // A new last turn stays after jailbreak and reasoning prompts already placed in the list.
-    chat.push({ role: 'user', content: planLine });
+    // Use the interceptor's history copy so both completion formats keep the plan here without saving it.
+    chat.splice(chat.lastIndexOf(target) + 1, 0, {
+        name: target.name,
+        is_user: true,
+        is_system: false,
+        mes: planLine,
+    });
     return chat;
 }
 

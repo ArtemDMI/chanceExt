@@ -18,7 +18,7 @@ import {
     isPlanApiOfflineError,
     createPlanRequestGate,
     preparePlanChat,
-    appendPlanToFinalChat,
+    insertPlanAfterLastUser,
     parseNodeCatalog,
     parsePlanDisplay,
     parsePlanNodes,
@@ -179,16 +179,48 @@ test('keeps only the first nodes allowed for injection', () => {
     assert.equal(formatPlanLine(limitPlanNodes(nodes, 4)).includes('4. [шаг]'), true);
 });
 
-test('places the plan after prompts that SillyTavern appends past the chat', () => {
-    const chat = [
-        { role: 'system', content: 'rules' },
-        { role: 'user', content: 'ход' },
-        { role: 'system', content: '# Reasoning Instructions' },
+test('inserts the plan after the latest real user turn and before later history and prompts', () => {
+    const savedChat = [
+        { name: 'User', is_user: true, mes: 'older turn' },
+        { name: 'Char', is_user: false, mes: 'older answer' },
+        { name: 'User', is_user: true, mes: 'latest turn' },
+        { name: 'Char', is_user: false, mes: 'continued answer' },
+        { is_user: true, mes: 'jailbreak' },
+        { name: 'System', is_user: true, is_system: true, mes: 'rules' },
+        { name: 'Note', is_user: true, mes: 'note', extra: { type: 'comment' } },
     ];
-    appendPlanToFinalChat(chat, 'PLAN');
-    assert.equal(chat.at(-1).role, 'user');
-    assert.equal(chat.at(-1).content, 'PLAN');
-    assert.equal(chat[2].content, '# Reasoning Instructions');
+    const chat = structuredClone(savedChat);
+    const line = formatPlanLine(['first', 'second'], 'Instructions:\n{{plan}}');
+
+    assert.equal(insertPlanAfterLastUser(chat, line), chat);
+    assert.deepEqual(chat[3], {
+        name: 'User', is_user: true, is_system: false, mes: line,
+    });
+    assert.deepEqual(chat.slice(0, 3), savedChat.slice(0, 3));
+    assert.deepEqual(chat.slice(4), savedChat.slice(3));
+    assert.equal(savedChat.length, 7);
+    assert.equal(savedChat[2].mes, 'latest turn');
+});
+
+test('inserts the plan after a user turn at the end of the history', () => {
+    const chat = [{ name: 'User', is_user: true, mes: 'turn' }];
+    insertPlanAfterLastUser(chat, 'PLAN');
+    assert.equal(chat.length, 2);
+    assert.equal(chat[1].mes, 'PLAN');
+});
+
+test('skips plan injection without a real user turn or a plan', () => {
+    const chat = [
+        { name: 'Char', is_user: false, mes: 'greeting' },
+        { is_user: true, mes: 'jailbreak' },
+    ];
+    const original = structuredClone(chat);
+    assert.equal(insertPlanAfterLastUser(chat, 'PLAN'), chat);
+    assert.deepEqual(chat, original);
+    assert.equal(insertPlanAfterLastUser(null, 'PLAN'), null);
+    const userChat = [{ name: 'User', is_user: true, mes: 'turn' }];
+    insertPlanAfterLastUser(userChat, '');
+    assert.equal(userChat.length, 1);
 });
 
 test('formats one plan line and appends it after the user turn', () => {
@@ -217,7 +249,8 @@ test('formats one plan line and appends it after the user turn', () => {
     assert.equal(line.includes('10. [внезапные события]'), true);
     assert.equal(line.includes('\n'), true);
     const injected = formatPlanLine(nodes);
-    assert.equal(injected.trimEnd().endsWith('10. [внезапные события]'), true);
+    assert.equal(injected.includes('10. [внезапные события]'), true);
+    assert.equal(injected.trimEnd().endsWith('High risk context is allowed.'), true);
     assert.equal(appendPlanLine('я прыгаю', line), `я прыгаю\n${line}`);
 });
 
