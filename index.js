@@ -2,6 +2,7 @@ import { getRequestHeaders } from '../../../../script.js';
 import {
     RANDOMIZER_SCHEMA,
     appendFailureMarker,
+    appendPlanLine,
     blockPlanNode,
     buildPlanContext,
     buildPlanRequestBody,
@@ -9,7 +10,7 @@ import {
     estimatePlanTokens,
     createPlanRequestGate,
     isPlanApiOfflineError,
-    insertPlanAfterLastUser,
+    appendPlanToFinalChat,
     findLastUserMessage,
     DEFAULT_PLAN_INJECT_PROMPT,
     formatPlanLine,
@@ -59,6 +60,7 @@ let settings = { ...DEFAULT_SETTINGS };
 const pendingResults = new Map();
 let chatObserver = null;
 const planRequests = createPlanRequestGate();
+let pendingPlanLine = null;
 
 function notifyError(message, error) {
     const details = error instanceof Error ? error.message : String(error ?? '');
@@ -502,18 +504,46 @@ function startPlanRequest(type) {
     };
 }
 
-function injectPlan(chat, nodes) {
+function queuePlanForEnd(nodes) {
     if (!nodes) {
+        pendingPlanLine = null;
         return;
     }
-    const planLine = formatPlanLine(
+    pendingPlanLine = formatPlanLine(
         limitPlanNodes(blockPlanNode(nodes, settings.planBlockedNode), settings.planNodeCount),
         settings.planInjectPrompt,
     );
-    if (findLastUserMessage(chat)) {
-        insertPlanAfterLastUser(chat, planLine);
-        console.info(`[${EXTENSION_NAME}] План поставлен после последнего сообщения пользователя`, planLine);
+}
+
+function placePendingPlan(chat) {
+    const planLine = pendingPlanLine;
+    if (!planLine || !Array.isArray(chat)) {
+        return;
     }
+    appendPlanToFinalChat(chat, planLine);
+    pendingPlanLine = null;
+    console.info(`[${EXTENSION_NAME}] План поставлен в конец запроса`, planLine);
+}
+
+function installPlanFinalizer() {
+    const context = SillyTavern.getContext();
+    // The finished chat-completion list already includes prompts that SillyTavern adds after the interceptor.
+    context.eventSource.on(context.eventTypes.CHAT_COMPLETION_PROMPT_READY, eventData => {
+        if (eventData?.dryRun) {
+            return;
+        }
+        placePendingPlan(eventData?.chat);
+    });
+    context.eventSource.on(context.eventTypes.GENERATE_AFTER_DATA, (generateData, dryRun) => {
+        if (dryRun || !pendingPlanLine || typeof generateData?.prompt !== 'string') {
+            return;
+        }
+        generateData.prompt = appendPlanLine(generateData.prompt, pendingPlanLine);
+        pendingPlanLine = null;
+    });
+    context.eventSource.on(context.eventTypes.GENERATION_STOPPED, () => {
+        pendingPlanLine = null;
+    });
 }
 
 function getExpectedMessageId(type) {
@@ -646,7 +676,7 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
         return;
     }
 
-    // Keep plan generation independent of the dice marker and the injected instructions.
+    // Snapshot the dialogue before the dice marker is merged, then inject the plan last.
     const planRun = runPlan ? startPlanRequest(type) : null;
 
     try {
@@ -738,7 +768,7 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
                     }
                     stopGeneration(abortGeneration);
                 } else if (planRequests.isCurrent(planRun.requestId)) {
-                    injectPlan(chat, nodes);
+                    queuePlanForEnd(nodes);
                 } else {
                     // The API answers every POST. This body belongs to the click that sent it, not the newer one.
                     console.info(`[${EXTENSION_NAME}] План ${planRun.requestId} отброшен: уже есть более новый запрос`);
@@ -757,6 +787,7 @@ jQuery(async () => {
     try {
         loadSettings();
         installResultUi();
+        installPlanFinalizer();
         console.log(`[${EXTENSION_NAME}] Ready`);
     } catch (error) {
         notifyError('Ошибка запуска расширения', error);

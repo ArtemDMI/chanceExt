@@ -591,14 +591,11 @@ export function pickRandomPlanNodes(sections, count, options = {}) {
 
 export const PLAN_PLACEHOLDER = '{{plan}}';
 
-export const DEFAULT_PLAN_INJECT_PROMPT = `ВАЖНО!!!  Каждый узел ниже — отдельное событие ответа, строго по порядку. Пропуск, перестановка и слияние двух узлов в одно событие — ошибка. Узел 1 — первое событие ответа, последний узел — последнее. Между узлами одна короткая причинная связка из текущей сцены; связка не вместо узла. В тексте не ставь номера и названия узлов.
+export const DEFAULT_PLAN_INJECT_PROMPT = `ВАЖНО!!!  Каждый Node ниже — отдельное событие ответа, строго по порядку которое должно явно случиться. Адаптируй все ноды как идеи в том же порядке что они и записаны, не выходя из роли и интересно интерпретируя, получая интересный сюжет.  Node 1 — первое событие ответа, последний узел — последнее. Между Node одна короткая причинная связка из текущей сцены.
+(пример интерпретации: [фантазия в мыслях] — мысли в голове персонажа, [предложение активности]  — любой NPC хочет предложить активность.
+Каждый следующий Node расшифровывай так же, пока он не станет видимым ходом истории.
 
-Ярлык в скобках — не тема и не цитата, а событие, которое должно явно случиться. Расшифруй его до живой сцены: кто, кому и что делает.
-«предложение активности» — один персонаж прямо предлагает другому конкретную активность.
-«фантазия в мыслях» — мысли в голове персонажа, не внешнее действие.
-Каждый следующий ярлык расшифровывай так же, пока он не станет видимым ходом истории.
-
-План:
+План из Nodes:
 ${PLAN_PLACEHOLDER}
 High risk context is allowed.`;
 
@@ -612,18 +609,12 @@ export function formatPlanLine(nodes, template = DEFAULT_PLAN_INJECT_PROMPT) {
     return source.split(PLAN_PLACEHOLDER).join(plan);
 }
 
-export function insertPlanAfterLastUser(chat, planLine) {
-    const target = findLastUserMessage(chat);
-    if (!planLine || !target) {
+export function appendPlanToFinalChat(chat, planLine) {
+    if (!planLine || !Array.isArray(chat)) {
         return chat;
     }
-    // Use the interceptor's history copy so both completion formats keep the plan here without saving it.
-    chat.splice(chat.lastIndexOf(target) + 1, 0, {
-        name: target.name,
-        is_user: true,
-        is_system: false,
-        mes: planLine,
-    });
+    // A new last turn stays after jailbreak and reasoning prompts already placed in the list.
+    chat.push({ role: 'user', content: planLine });
     return chat;
 }
 
