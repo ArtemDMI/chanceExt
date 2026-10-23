@@ -6,7 +6,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 import * as chance from './chance.js';
-import { normalizeNodePanelPosition } from './node-panel.js';
+import { normalizeNodePanelPosition, normalizeNodePanelSize } from './node-panel.js';
 
 const indexUrl = new URL('./index.js', import.meta.url);
 // Run the production interceptor without SillyTavern's imports or browser startup, and without experimental VM flags.
@@ -72,6 +72,7 @@ function createHarness(t, options = {}) {
         getRequestHeaders: () => ({ 'Content-Type': 'application/json' }),
         normalizeManualLayout: layout => layout ?? null,
         normalizeNodePanelPosition,
+        normalizeNodePanelSize,
         createNodePanel(panelOptions) {
             const panel = {
                 options: panelOptions,
@@ -568,4 +569,33 @@ test('panel preferences survive normalization and position changes are saved', t
         assert.deepEqual([...h.normalizeSettings({ planPanelNodes: nodes }).planPanelNodes], []);
     }
     assert.deepEqual(normalizeNodePanelPosition({ x: -10, y: Infinity }), { x: 0, y: null });
+});
+
+test('panel sizes are normalized without losing existing position preferences', t => {
+    const h = createHarness(t);
+    const old = h.normalizeSettings({ planPanelPosition: { x: 40, y: 100 } });
+    assert.deepEqual(old.planPanelPosition, { x: 40, y: 100 });
+    assert.deepEqual(old.planPanelSize, { width: 250, height: null });
+    assert.deepEqual(normalizeNodePanelSize({ width: 560, height: 350 }), { width: 560, height: 350 });
+    assert.deepEqual(normalizeNodePanelSize({ width: -1, height: 0 }), { width: 180, height: 120 });
+    assert.deepEqual(normalizeNodePanelSize({ width: 99999, height: 99999 }), { width: 4000, height: 2400 });
+    assert.deepEqual(normalizeNodePanelSize({ width: NaN, height: Infinity }), { width: 250, height: null });
+    assert.deepEqual(normalizeNodePanelSize({ width: '500', height: '400' }), { width: 250, height: null });
+});
+
+test('panel size changes are saved and supplied when the panel is reopened', t => {
+    const h = createHarness(t, { settings: {
+        planNodePanel: true, planPanelSize: { width: 400, height: 200 }, planPanelPosition: { x: 50, y: 80 },
+    } });
+    h.syncNodePanel();
+    assert.deepEqual(h.panels[0].options.size, { width: 400, height: 200 });
+    h.panels[0].options.onSizeChange({ width: 600, height: 300 });
+    h.panels[0].options.onPositionChange({ x: 100, y: 120 });
+    assert.deepEqual(h.context.extensionSettings.ChanceExt.planPanelSize, { width: 600, height: 300 });
+    h.settings.planNodePanel = false;
+    h.syncNodePanel();
+    h.settings.planNodePanel = true;
+    h.syncNodePanel();
+    assert.deepEqual(h.panels[1].options.size, { width: 600, height: 300 });
+    assert.deepEqual(h.panels[1].options.position, { x: 100, y: 120 });
 });

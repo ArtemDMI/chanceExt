@@ -84,8 +84,12 @@
     z-index: 10000;
     box-sizing: border-box;
     width: 250px;
+    min-width: min(180px, calc(100vw - 16px));
+    min-height: min(120px, calc(100dvh - 16px));
     max-width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);
+    resize: both;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -112,7 +116,9 @@
 }
 
 .chance-ext-node-panel-list {
+    flex: 1;
     min-height: 0;
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     list-style: none;
@@ -122,7 +128,9 @@
 
 .chance-ext-node-panel-list li {
     padding: 5px 4px;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     border-bottom: 1px solid #242b37;
 }
 
@@ -139,6 +147,9 @@
     flex-shrink: 0;
     color: #8b95a8;
     font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .chance-ext-node-panel-generate {

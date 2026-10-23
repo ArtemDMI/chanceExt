@@ -1,6 +1,6 @@
 import { getRequestHeaders } from '../../../../script.js';
 import { chooseManualPlanNodes, normalizeManualLayout } from './manual-picker.js';
-import { createNodePanel, normalizeNodePanelPosition } from './node-panel.js';
+import { createNodePanel, normalizeNodePanelPosition, normalizeNodePanelSize } from './node-panel.js';
 import {
     RANDOMIZER_SCHEMA,
     appendFailureMarker,
@@ -59,6 +59,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     planNodePanel: false,
     planPanelNodes: [],
     planPanelPosition: null,
+    planPanelSize: null,
     planWeighted: true,
     planWeightFlatten: 0,
     planInjectPrompt: DEFAULT_PLAN_INJECT_PROMPT,
@@ -117,6 +118,7 @@ function normalizeSettings(raw) {
             && source.planPanelNodes.every(node => typeof node === 'string' && node.trim())
             ? [...source.planPanelNodes] : [],
         planPanelPosition: normalizeNodePanelPosition(source.planPanelPosition),
+        planPanelSize: normalizeNodePanelSize(source.planPanelSize),
         // Digits in nodes.txt are the weights unless the switch is turned off.
         planWeighted: source.planWeighted !== false,
         planWeightFlatten: normalizePlanWeightFlatten(source.planWeightFlatten),
@@ -266,9 +268,14 @@ function syncNodePanel() {
     }
     nodePanel ??= createNodePanel({
         position: settings.planPanelPosition,
+        size: settings.planPanelSize,
         onGenerate: regeneratePanelNodes,
         onPositionChange: position => {
             settings.planPanelPosition = position;
+            saveSettings();
+        },
+        onSizeChange: size => {
+            settings.planPanelSize = size;
             saveSettings();
         },
     });

@@ -3,7 +3,16 @@ export function normalizeNodePanelPosition(value) {
     return { x: coordinate(value?.x), y: coordinate(value?.y) };
 }
 
-export function createNodePanel({ position, onGenerate, onPositionChange }) {
+export function normalizeNodePanelSize(value) {
+    const dimension = (value, min, max, fallback) => typeof value === 'number' && Number.isFinite(value)
+        ? Math.min(max, Math.max(min, value)) : fallback;
+    return {
+        width: dimension(value?.width, 180, 4000, 250),
+        height: dimension(value?.height, 120, 2400, null),
+    };
+}
+
+export function createNodePanel({ position, size, onGenerate, onPositionChange, onSizeChange }) {
     const panel = document.createElement('section');
     panel.className = 'chance-ext-node-panel';
     panel.setAttribute('aria-label', 'Панель нод');
@@ -17,7 +26,11 @@ export function createNodePanel({ position, onGenerate, onPositionChange }) {
     const status = panel.querySelector('[role="status"]');
     const button = panel.querySelector('button');
     let location = normalizeNodePanelPosition(position);
+    let dimensions = normalizeNodePanelSize(size);
+    let initialized = false;
     let drag = null;
+    panel.style.width = `${dimensions.width}px`;
+    if (dimensions.height !== null) panel.style.height = `${dimensions.height}px`;
     document.body.appendChild(panel);
 
     function place() {
@@ -65,6 +78,18 @@ export function createNodePanel({ position, onGenerate, onPositionChange }) {
     panel.addEventListener('keydown', event => event.stopPropagation());
     button.addEventListener('click', () => { void onGenerate(); });
     window.addEventListener('resize', place);
+    const sizeObserver = new ResizeObserver(() => {
+        if (!initialized) return;
+        const width = Number.parseFloat(panel.style.width);
+        const height = Number.parseFloat(panel.style.height);
+        // Viewport clamping must not overwrite the user's preferred desktop size.
+        if (width === dimensions.width && height === dimensions.height) return;
+        dimensions = normalizeNodePanelSize({ width, height });
+        place();
+        remember();
+        onSizeChange?.({ ...dimensions });
+    });
+    sizeObserver.observe(panel);
 
     return {
         update({ nodes, count, blockedNodes, busy, error }) {
@@ -83,9 +108,20 @@ export function createNodePanel({ position, onGenerate, onPositionChange }) {
             status.textContent = error || (valid ? '' : 'Нажмите Gen nodes');
             status.hidden = !status.textContent;
             button.setAttribute('aria-busy', String(busy));
+            if (!initialized && dimensions.height === null) {
+                // Freeze the initial height so new node text or a status cannot move Gen nodes.
+                dimensions.height = Math.ceil(panel.getBoundingClientRect().height);
+                panel.style.height = `${dimensions.height}px`;
+                onSizeChange?.({ ...dimensions });
+            }
             place();
+            if (!initialized) {
+                location = { x: panel.offsetLeft, y: panel.offsetTop };
+                initialized = true;
+            }
         },
         destroy() {
+            sizeObserver.disconnect();
             window.removeEventListener('resize', place);
             panel.remove();
         },
