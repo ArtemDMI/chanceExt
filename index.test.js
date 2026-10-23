@@ -90,7 +90,7 @@ function createHarness(t, options = {}) {
         },
     });
     vm.runInContext(source, sandbox, { filename: indexUrl.pathname });
-    const api = vm.runInContext('({ interceptGeneration, settings, installPlanFinalizer })', sandbox);
+    const api = vm.runInContext('({ interceptGeneration, settings, installPlanFinalizer, normalizeSettings })', sandbox);
     Object.assign(api.settings, {
         planInjecting: true,
         planSource: 'file',
@@ -193,6 +193,46 @@ test('cancelled manual selection aborts generation without starting probability'
     assert.deepEqual(h.aborts, [true]);
     assert.equal(h.requests.length, 1);
     assert.equal(h.finalize().length, 1);
+});
+
+test('completed manual selection is saved and supplied unchanged to the next picker', async t => {
+    const h = createHarness(t);
+    const run = h.run();
+    await setImmediate();
+    const nodes = ['Delta', 'Alpha'];
+    h.picks[0].selection.resolve(nodes);
+    await run;
+    assert.deepEqual([...h.settings.planManualLastNodes], nodes);
+    assert.deepEqual([...h.context.extensionSettings.ChanceExt.planManualLastNodes], nodes);
+    assert.notEqual(h.settings.planManualLastNodes, nodes);
+    h.finalize();
+
+    h.settings.planNodeCount = 3;
+    const nextRun = h.run('swipe');
+    await setImmediate();
+    assert.equal(h.picks[1].count, 3);
+    assert.deepEqual([...h.picks[1].previousNodes], nodes, 'do not truncate the saved selection to match a new count');
+    h.picks[1].selection.resolve(null);
+    await nextRun;
+    assert.deepEqual([...h.settings.planManualLastNodes], nodes, 'cancellation must preserve the completed selection');
+});
+
+test('automatic file generation does not overwrite the last manual selection', async t => {
+    const nodes = ['Delta', 'Alpha'];
+    const h = createHarness(t, { settings: { planManualSelection: false, planManualLastNodes: nodes } });
+    await h.run();
+    assert.deepEqual(h.settings.planManualLastNodes, nodes);
+});
+
+test('last manual selection survives settings normalization and rejects malformed saved data', t => {
+    const h = createHarness(t);
+    const saved = ['Delta', 'Alpha'];
+    const normalized = h.normalizeSettings({ planManualLastNodes: saved });
+    assert.deepEqual([...normalized.planManualLastNodes], saved);
+    assert.notEqual(normalized.planManualLastNodes, saved);
+    for (const value of [null, 'Alpha', [3], [''], ['Alpha', ' '], Array(11).fill('Alpha')]) {
+        assert.deepEqual([...h.normalizeSettings({ planManualLastNodes: value }).planManualLastNodes], []);
+    }
 });
 
 test('automatic file mode uses the random picker without opening manual selection or calling the plan API', { timeout: 3000 }, async t => {

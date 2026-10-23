@@ -59,7 +59,7 @@
     min-width: min(320px, calc(100vw - 24px));
     min-height: min(280px, calc(100dvh - 24px));
     margin: auto;
-    padding: 12px;
+    padding: 6px;
     border: 1px solid #465064;
     border-radius: 10px;
     background: #12141a;
@@ -73,7 +73,7 @@
 .chance-ext-picker[open] {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 4px;
 }
 
 .chance-ext-picker::backdrop {
@@ -90,21 +90,11 @@
     font: inherit;
 }
 
-.chance-ext-picker-header,
 .chance-ext-picker-toolbar {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 4px;
     flex-shrink: 0;
-}
-
-.chance-ext-picker-header {
-    justify-content: space-between;
-}
-
-.chance-ext-picker-progress {
-    color: #7dcea0;
-    margin-left: 10px;
 }
 
 .chance-ext-picker button {
@@ -118,33 +108,56 @@
     border: 1px solid #465064;
     border-radius: 5px;
     background: #1b1f28;
-    min-width: 32px;
-    height: 30px;
-    padding: 0 6px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 4px;
 }
 
 .chance-ext-picker-close {
-    font-size: 22px !important;
+    font-size: 18px !important;
+    flex-shrink: 0;
 }
 
-.chance-ext-picker-hint {
-    color: #8b95a8;
-    font-size: 12px;
+.chance-ext-picker-slots-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
     flex-shrink: 0;
+}
+
+.chance-ext-picker-repeat {
+    flex-shrink: 0;
+    height: 20px;
+    padding: 0 6px;
+    border: 1px solid #d75b65;
+    border-radius: 4px;
+    background: #a52836;
+    color: #fff;
+    font-size: 12px !important;
+}
+
+.chance-ext-picker-repeat:hover:not(:disabled) {
+    background: #c53243;
+}
+
+.chance-ext-picker-repeat:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .chance-ext-picker-slots {
     display: flex;
     overflow-x: auto;
-    gap: 6px;
-    padding-bottom: 4px;
-    flex-shrink: 0;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    scrollbar-width: thin;
 }
 
 .chance-ext-picker-slot {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 3px;
     flex: 1 0 100px;
     min-width: 0;
 }
@@ -155,8 +168,9 @@
     border-radius: 50%;
     background: var(--node-color);
     color: #10131a;
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
+    font-size: 12px;
     flex-shrink: 0;
     font-weight: 800;
     cursor: grab;
@@ -173,6 +187,11 @@
 
 .chance-ext-picker-slot input {
     width: 100%;
+    height: 19px;
+    min-height: 0;
+    padding: 0 3px;
+    font-size: 12px;
+    line-height: 17px;
     border-color: #9b535b;
 }
 
@@ -195,20 +214,28 @@
     flex-wrap: wrap;
 }
 
-.chance-ext-picker-toolbar label {
+.chance-ext-picker-size-controls,
+.chance-ext-picker-size-controls label {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 3px;
     white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 11px;
 }
 
-.chance-ext-picker-toolbar input[type='number'] {
-    width: 50px;
+.chance-ext-picker-size-controls input[type='number'] {
+    width: 34px;
+    height: 20px;
+    padding: 0 2px;
 }
 
 .chance-ext-picker-search {
     flex: 1;
     min-width: 120px !important;
+    height: 22px;
+    padding: 0 4px;
+    font-size: 12px !important;
 }
 
 .chance-ext-picker-catalog {
@@ -362,17 +389,6 @@
 
 @media (max-width: 600px) {
     .chance-ext-picker {
-        padding: 8px;
-        gap: 7px;
         resize: none;
-    }
-
-    .chance-ext-picker-hint {
-        font-size: 11px;
-    }
-
-    .chance-ext-picker-search {
-        order: 1;
-        flex-basis: 100%;
     }
 }

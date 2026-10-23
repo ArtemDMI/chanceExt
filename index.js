@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     planSource: 'api',
     planManualSelection: false,
     planManualLayout: null,
+    planManualLastNodes: [],
     planWeighted: true,
     planWeightFlatten: 0,
     planInjectPrompt: DEFAULT_PLAN_INJECT_PROMPT,
@@ -99,6 +100,10 @@ function normalizeSettings(raw) {
         planSource: source.planSource === 'file' ? 'file' : 'api',
         planManualSelection: source.planManualSelection === true,
         planManualLayout: normalizeManualLayout(source.planManualLayout),
+        planManualLastNodes: Array.isArray(source.planManualLastNodes)
+            && source.planManualLastNodes.length <= 10
+            && source.planManualLastNodes.every(node => typeof node === 'string' && node.trim())
+            ? [...source.planManualLastNodes] : [],
         // Digits in nodes.txt are the weights unless the switch is turned off.
         planWeighted: source.planWeighted !== false,
         planWeightFlatten: normalizePlanWeightFlatten(source.planWeightFlatten),
@@ -376,6 +381,7 @@ async function requestFilePlanNodes(requestId, controller) {
             blockedText,
             signal: controller.signal,
             layout: settings.planManualLayout,
+            previousNodes: settings.planManualLastNodes,
             onLayoutChange: layout => {
                 settings.planManualLayout = layout;
                 saveSettings();
@@ -394,6 +400,10 @@ async function requestFilePlanNodes(requestId, controller) {
         if (nodes.length === 0) {
             notifyPlanSkipped('В nodes.txt нет нод для цепочки');
             return manual ? { cancelled: true } : null;
+        }
+        if (manual) {
+            settings.planManualLastNodes = [...nodes];
+            saveSettings();
         }
         console.info(`[${EXTENSION_NAME}] Цепочка из файла`, { requestId, nodes });
         toastr.success(nodes.join(' | '), 'Ноды из файла', {

@@ -52,30 +52,43 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         dialog.style.width = `${layout.width}px`;
         dialog.style.height = `${layout.height}px`;
         dialog.innerHTML = `
-            <header class="chance-ext-picker-header">
-                <strong>Ручной выбор нод <span class="chance-ext-picker-progress" aria-live="polite"></span></strong>
+            <div class="chance-ext-picker-slots-row">
+                <div class="chance-ext-picker-slots"></div>
+                <button type="button" class="chance-ext-picker-repeat">Повтор</button>
+                <div class="chance-ext-picker-size-controls">
+                    <label>Колонки <input class="chance-ext-picker-columns" type="number" min="1" max="10"></label>
+                    <label>Шрифт <input class="chance-ext-picker-font" type="number" min="10" max="22"></label>
+                </div>
                 <button type="button" class="chance-ext-picker-close" aria-label="Отменить генерацию">×</button>
-            </header>
-            <div class="chance-ext-picker-hint">Выберите ноды по порядку. Последняя заполненная ячейка продолжит генерацию автоматически.</div>
-            <div class="chance-ext-picker-slots"></div>
+            </div>
             <div class="chance-ext-picker-toolbar">
-                <label>Колонки <input class="chance-ext-picker-columns" type="number" min="1" max="10"></label>
-                <label>Шрифт <input class="chance-ext-picker-font" type="number" min="10" max="22"></label>
                 <input class="chance-ext-picker-search" type="search" placeholder="Найти ноду" aria-label="Найти ноду">
                 <button type="button" class="chance-ext-picker-left" aria-label="Сдвинуть список влево">←</button>
                 <button type="button" class="chance-ext-picker-right" aria-label="Сдвинуть список вправо">→</button>
             </div>
             <div class="chance-ext-picker-catalog"></div>
-            <div class="chance-ext-picker-hint">Полосы: частотность из файла. Номера и цвет: порядок в цепочке. Тяните за рукоятку, чтобы сдвинуть ноду в списке.</div>
             <svg class="chance-ext-picker-links" aria-hidden="true"><line /></svg>`;
         const slotsHost = dialog.querySelector('.chance-ext-picker-slots');
         const catalog = dialog.querySelector('.chance-ext-picker-catalog');
         const columnsInput = dialog.querySelector('.chance-ext-picker-columns');
         const fontInput = dialog.querySelector('.chance-ext-picker-font');
         const search = dialog.querySelector('.chance-ext-picker-search');
-        const progress = dialog.querySelector('.chance-ext-picker-progress');
         const line = dialog.querySelector('line');
         const inputs = [];
+        const repeatButton = dialog.querySelector('.chance-ext-picker-repeat');
+        const previousNodes = Array.isArray(options.previousNodes)
+            && options.previousNodes.length === normalizePlanNodeCount(count)
+            && options.previousNodes.every(node => typeof node === 'string' && canonicalName(node))
+            ? options.previousNodes.map(canonicalName) : null;
+        repeatButton.disabled = !previousNodes;
+        repeatButton.title = previousNodes
+            ? 'Вставить прошлый выбор и сразу продолжить генерацию'
+            : 'Нет прошлого выбора с таким количеством доступных нод';
+        repeatButton.addEventListener('click', () => {
+            if (!previousNodes) return;
+            inputs.forEach((input, index) => { input.value = previousNodes[index]; });
+            finish([...previousNodes]);
+        });
         let activeIndex = 0;
         let settled = false;
         let frame;
@@ -128,7 +141,6 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
 
         function paintSelection() {
             const selected = inputs.map(input => canonicalName(input.value));
-            progress.textContent = `${selected.filter(Boolean).length} / ${inputs.length}`;
             inputs.forEach((input, index) => {
                 input.classList.toggle('is-filled', Boolean(selected[index]));
                 input.classList.toggle('is-invalid', Boolean(input.value) && !selected[index]);
