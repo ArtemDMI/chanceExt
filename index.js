@@ -367,6 +367,13 @@ async function requestFilePlanNodes(requestId, controller) {
             return null;
         }
         console.info(`[${EXTENSION_NAME}] Цепочка из файла`, { requestId, nodes });
+        toastr.success(nodes.join(' | '), 'Ноды из файла', {
+            ...TOAST_OPTIONS,
+            timeOut: 2_000,
+            extendedTimeOut: 0,
+            positionClass: 'toast-top-center',
+            escapeHtml: true,
+        });
         return nodes;
     } catch (error) {
         if (!planRequests.isCurrent(requestId) || error?.name === 'AbortError') {
