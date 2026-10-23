@@ -5,132 +5,152 @@
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <div class="chance-ext-row">
-                <label class="checkbox_label" for="chance_ext_enabled">
-                    <input id="chance_ext_enabled" type="checkbox">
-                    <span>Проверка вероятности</span>
-                </label>
-            </div>
+            <section class="chance-ext-settings-section" aria-labelledby="chance_ext_probability_heading">
+                <h4 id="chance_ext_probability_heading" class="chance-ext-section-title">
+                    <label class="checkbox_label" for="chance_ext_enabled">
+                        <input id="chance_ext_enabled" type="checkbox">
+                        <span>Проверка вероятности</span>
+                    </label>
+                </h4>
 
-            <div class="chance-ext-row">
-                <label for="chance_ext_bonus">Бонус, %</label>
-                <input
-                    id="chance_ext_bonus"
-                    class="text_pole"
-                    type="number"
-                    min="-100"
-                    max="99"
-                    step="1"
-                    value="20"
-                >
-            </div>
+                <div class="chance-ext-row">
+                    <label for="chance_ext_model">Модель</label>
+                    <input
+                        id="chance_ext_model"
+                        class="text_pole"
+                        type="text"
+                        value="google/gemini-3.8-flash"
+                        placeholder="provider/model-name"
+                        autocomplete="off"
+                        spellcheck="false"
+                    >
+                </div>
 
-            <div class="chance-ext-row">
-                <label for="chance_ext_model">Модель</label>
-                <input
-                    id="chance_ext_model"
-                    class="text_pole"
-                    type="text"
-                    value="google/gemini-3.8-flash"
-                    placeholder="provider/model-name"
-                    autocomplete="off"
-                    spellcheck="false"
-                >
-            </div>
+                <div class="chance-ext-row chance-ext-row-compact">
+                    <label for="chance_ext_bonus">Бонус, %</label>
+                    <input
+                        id="chance_ext_bonus"
+                        class="text_pole"
+                        type="number"
+                        min="-100"
+                        max="99"
+                        step="1"
+                        value="20"
+                    >
+                </div>
+            </section>
 
-            <div class="chance-ext-section-title">Дополнительно</div>
+            <section class="chance-ext-settings-section" aria-labelledby="chance_ext_nodes_heading">
+                <h4 id="chance_ext_nodes_heading" class="chance-ext-section-title">
+                    <label class="checkbox_label" for="chance_ext_plan_injecting">
+                        <input id="chance_ext_plan_injecting" type="checkbox">
+                        <span>Цепочка нод</span>
+                    </label>
+                </h4>
 
-            <div class="chance-ext-row">
-                <label class="checkbox_label" for="chance_ext_plan_injecting">
-                    <input id="chance_ext_plan_injecting" type="checkbox">
-                    <span>Цепочка нод</span>
-                </label>
-            </div>
+                <div class="chance-ext-settings-group">
+                    <div class="chance-ext-group-title">Режим выбора</div>
+                    <div class="chance-ext-row">
+                        <label for="chance_ext_plan_source">Источник</label>
+                        <select id="chance_ext_plan_source" class="text_pole">
+                            <option value="api">API</option>
+                            <option value="file">Файл</option>
+                        </select>
+                    </div>
 
-            <div class="chance-ext-row">
-                <label for="chance_ext_plan_source">Источник</label>
-                <select id="chance_ext_plan_source" class="text_pole">
-                    <option value="api">API</option>
-                    <option value="file">Файл</option>
-                </select>
-            </div>
+                    <div class="chance-ext-row chance-ext-plan-file-only is-hidden">
+                        <label class="checkbox_label" for="chance_ext_plan_manual" title="Выбор перед генерацией и свайпом. Последняя нода автоматически запускает генерацию.">
+                            <input id="chance_ext_plan_manual" type="checkbox">
+                            <span>Ручной выбор нод</span>
+                        </label>
+                    </div>
 
-            <div class="chance-ext-row">
-                <label for="chance_ext_plan_node_count">Нод в цепочке</label>
-                <input
-                    id="chance_ext_plan_node_count"
-                    class="text_pole"
-                    type="number"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value="10"
-                >
-            </div>
+                    <div class="chance-ext-row">
+                        <label class="checkbox_label" for="chance_ext_plan_node_panel">
+                            <input id="chance_ext_plan_node_panel" type="checkbox">
+                            <span>Панель полурандомного выбора</span>
+                        </label>
+                    </div>
+                </div>
 
-            <div class="chance-ext-row">
-                <label for="chance_ext_plan_blocked_node">Запрещённые ноды</label>
-                <input
-                    id="chance_ext_plan_blocked_node"
-                    class="text_pole"
-                    type="text"
-                    placeholder="новый персонаж, паника"
-                    autocomplete="off"
-                    spellcheck="false"
-                >
-            </div>
+                <div class="chance-ext-settings-group">
+                    <div class="chance-ext-group-title">Параметры цепочки</div>
+                    <div class="chance-ext-row chance-ext-row-compact">
+                        <label for="chance_ext_plan_node_count">Нод в цепочке</label>
+                        <input
+                            id="chance_ext_plan_node_count"
+                            class="text_pole"
+                            type="number"
+                            min="1"
+                            max="10"
+                            step="1"
+                            value="10"
+                        >
+                    </div>
 
-            <div class="chance-ext-row chance-ext-plan-file-only is-hidden">
-                <label class="checkbox_label" for="chance_ext_plan_manual">
-                    <input id="chance_ext_plan_manual" type="checkbox">
-                    <span>Ручной выбор нод</span>
-                </label>
-                <small>Выбор перед генерацией и свайпом. Последняя нода автоматически запускает генерацию.</small>
-            </div>
+                    <div class="chance-ext-row">
+                        <label for="chance_ext_plan_blocked_node">Запрещённые ноды</label>
+                        <input
+                            id="chance_ext_plan_blocked_node"
+                            class="text_pole"
+                            type="text"
+                            placeholder="новый персонаж, паника"
+                            autocomplete="off"
+                            spellcheck="false"
+                        >
+                    </div>
+                </div>
 
-            <div class="chance-ext-row chance-ext-plan-file-only is-hidden">
-                <label class="checkbox_label" for="chance_ext_plan_weighted">
-                    <input id="chance_ext_plan_weighted" type="checkbox">
-                    <span>Вероятность из цифр</span>
-                </label>
-            </div>
+                <div class="chance-ext-settings-group">
+                    <div class="chance-ext-group-title">Параметры подбора</div>
+                    <div class="chance-ext-row chance-ext-plan-file-only is-hidden">
+                        <label class="checkbox_label" for="chance_ext_plan_weighted">
+                            <input id="chance_ext_plan_weighted" type="checkbox">
+                            <span>Вероятность из цифр</span>
+                        </label>
+                    </div>
 
-            <div class="chance-ext-row chance-ext-plan-file-only chance-ext-plan-weight-only is-hidden">
-                <label for="chance_ext_plan_flatten">Плющитель вероятности</label>
-                <input
-                    id="chance_ext_plan_flatten"
-                    class="text_pole"
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value="0"
-                >
-            </div>
+                    <div class="chance-ext-row chance-ext-row-compact chance-ext-plan-file-only chance-ext-plan-weight-only is-hidden">
+                        <label for="chance_ext_plan_flatten">Плющитель вероятности</label>
+                        <input
+                            id="chance_ext_plan_flatten"
+                            class="text_pole"
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value="0"
+                        >
+                    </div>
 
-            <div class="chance-ext-row chance-ext-plan-api-only">
-                <label for="chance_ext_plan_temperature">Температура</label>
-                <input
-                    id="chance_ext_plan_temperature"
-                    class="text_pole"
-                    type="number"
-                    min="0"
-                    max="2"
-                    step="0.1"
-                    placeholder="не задана"
-                    autocomplete="off"
-                >
-            </div>
+                    <div class="chance-ext-row chance-ext-row-compact chance-ext-plan-api-only">
+                        <label for="chance_ext_plan_temperature">Температура</label>
+                        <input
+                            id="chance_ext_plan_temperature"
+                            class="text_pole"
+                            type="number"
+                            min="0"
+                            max="2"
+                            step="0.1"
+                            placeholder="не задана"
+                            autocomplete="off"
+                        >
+                    </div>
+                </div>
 
-            <div class="chance-ext-row">
-                <label for="chance_ext_plan_inject_prompt">Текст инжекта</label>
-                <textarea
-                    id="chance_ext_plan_inject_prompt"
-                    class="text_pole"
-                    rows="8"
-                    spellcheck="false"
-                ></textarea>
-            </div>
+                <details class="chance-ext-settings-group chance-ext-inject-settings">
+                    <summary class="chance-ext-group-title">Текст инжекта</summary>
+                    <div class="chance-ext-row">
+                        <textarea
+                            id="chance_ext_plan_inject_prompt"
+                            class="text_pole"
+                            aria-label="Текст инжекта"
+                            rows="8"
+                            spellcheck="false"
+                        ></textarea>
+                    </div>
+                </details>
+            </section>
         </div>
     </div>
 </div>

@@ -1,5 +1,6 @@
 import { getRequestHeaders } from '../../../../script.js';
 import { chooseManualPlanNodes, normalizeManualLayout } from './manual-picker.js';
+import { createNodePanel, normalizeNodePanelPosition } from './node-panel.js';
 import {
     RANDOMIZER_SCHEMA,
     appendFailureMarker,
@@ -55,6 +56,9 @@ const DEFAULT_SETTINGS = Object.freeze({
     planManualSelection: false,
     planManualLayout: null,
     planManualLastNodes: [],
+    planNodePanel: false,
+    planPanelNodes: [],
+    planPanelPosition: null,
     planWeighted: true,
     planWeightFlatten: 0,
     planInjectPrompt: DEFAULT_PLAN_INJECT_PROMPT,
@@ -65,6 +69,10 @@ const pendingResults = new Map();
 let chatObserver = null;
 const planRequests = createPlanRequestGate();
 let pendingPlanLine = null;
+let nodePanel = null;
+let panelRollId = 0;
+let panelRollController = null;
+let panelError = '';
 
 function notifyError(message, error) {
     const details = error instanceof Error ? error.message : String(error ?? '');
@@ -104,6 +112,11 @@ function normalizeSettings(raw) {
             && source.planManualLastNodes.length <= 10
             && source.planManualLastNodes.every(node => typeof node === 'string' && node.trim())
             ? [...source.planManualLastNodes] : [],
+        planNodePanel: source.planNodePanel === true,
+        planPanelNodes: Array.isArray(source.planPanelNodes) && source.planPanelNodes.length <= 10
+            && source.planPanelNodes.every(node => typeof node === 'string' && node.trim())
+            ? [...source.planPanelNodes] : [],
+        planPanelPosition: normalizeNodePanelPosition(source.planPanelPosition),
         // Digits in nodes.txt are the weights unless the switch is turned off.
         planWeighted: source.planWeighted !== false,
         planWeightFlatten: normalizePlanWeightFlatten(source.planWeightFlatten),
@@ -134,6 +147,7 @@ function updateSettingsUi() {
     $('#chance_ext_plan_node_count').val(settings.planNodeCount);
     $('#chance_ext_plan_source').val(settings.planSource);
     $('#chance_ext_plan_manual').prop('checked', settings.planManualSelection);
+    $('#chance_ext_plan_node_panel').prop('checked', settings.planNodePanel);
     $('#chance_ext_plan_weighted').prop('checked', settings.planWeighted);
     $('#chance_ext_plan_flatten').val(settings.planWeightFlatten);
     $('#chance_ext_plan_inject_prompt').val(settings.planInjectPrompt);
@@ -141,10 +155,11 @@ function updateSettingsUi() {
 }
 
 function syncPlanSourceRows() {
-    const fromFile = settings.planSource === 'file';
+    const fromFile = settings.planSource === 'file' || settings.planNodePanel;
     $('.chance-ext-plan-file-only').toggleClass('is-hidden', !fromFile);
     $('.chance-ext-plan-weight-only').toggleClass('is-hidden', !fromFile || !settings.planWeighted);
     $('.chance-ext-plan-api-only').toggleClass('is-hidden', fromFile);
+    $('#chance_ext_plan_manual').prop('disabled', settings.planNodePanel);
 }
 
 function bindSettingsUi() {
@@ -192,12 +207,14 @@ function bindSettingsUi() {
         settings.planBlockedNode = String(event.target.value ?? '').trim();
         event.target.value = settings.planBlockedNode;
         saveSettings();
+        syncNodePanel();
     });
 
     $('#chance_ext_plan_node_count').on('change', event => {
         settings.planNodeCount = normalizePlanNodeCount(event.target.value);
         event.target.value = settings.planNodeCount;
         saveSettings();
+        syncNodePanel();
     });
 
     $('#chance_ext_plan_source').on('change', event => {
@@ -217,6 +234,13 @@ function bindSettingsUi() {
         saveSettings();
     });
 
+    $('#chance_ext_plan_node_panel').on('change', event => {
+        settings.planNodePanel = event.target.checked;
+        saveSettings();
+        syncPlanSourceRows();
+        syncNodePanel();
+    });
+
     $('#chance_ext_plan_flatten').on('change', event => {
         settings.planWeightFlatten = normalizePlanWeightFlatten(event.target.value);
         event.target.value = settings.planWeightFlatten;
@@ -228,6 +252,71 @@ function bindSettingsUi() {
         event.target.value = settings.planInjectPrompt;
         saveSettings();
     });
+}
+
+function syncNodePanel() {
+    if (!settings.planNodePanel) {
+        panelRollId += 1;
+        panelRollController?.abort();
+        panelRollController = null;
+        panelError = '';
+        nodePanel?.destroy();
+        nodePanel = null;
+        return;
+    }
+    nodePanel ??= createNodePanel({
+        position: settings.planPanelPosition,
+        onGenerate: regeneratePanelNodes,
+        onPositionChange: position => {
+            settings.planPanelPosition = position;
+            saveSettings();
+        },
+    });
+    nodePanel.update({
+        nodes: settings.planPanelNodes,
+        count: settings.planNodeCount,
+        blockedNodes: blockPlanNode(settings.planPanelNodes, settings.planBlockedNode),
+        busy: Boolean(panelRollController),
+        error: panelError,
+    });
+}
+
+async function regeneratePanelNodes() {
+    if (!settings.planNodePanel) return;
+    const rollId = ++panelRollId;
+    panelRollController?.abort();
+    const controller = new AbortController();
+    panelRollController = controller;
+    panelError = '';
+    const { planNodeCount: count, planWeighted: weighted, planWeightFlatten: flatten, planBlockedNode: blockedText } = settings;
+    syncNodePanel();
+    try {
+        const url = new URL('./nodes.txt', import.meta.url);
+        url.searchParams.set('t', Date.now().toString());
+        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(`nodes.txt: HTTP ${response.status}`);
+        const catalog = parseNodeCatalog(await response.text());
+        if (rollId !== panelRollId || !settings.planNodePanel) return;
+        // Settings changes must not silently pin a combination drawn under the old rules.
+        if (count !== settings.planNodeCount || weighted !== settings.planWeighted
+            || flatten !== settings.planWeightFlatten || blockedText !== settings.planBlockedNode) {
+            panelError = 'Настройки изменились. Нажмите Gen nodes';
+            return;
+        }
+        const nodes = pickRandomPlanNodes(catalog, count, { weighted, flatten, blockedText });
+        if (nodes.length !== count) throw new Error(`Доступно нод: ${nodes.length}, требуется: ${count}`);
+        settings.planPanelNodes = [...nodes];
+        saveSettings();
+    } catch (error) {
+        if (rollId !== panelRollId || controller.signal.aborted) return;
+        panelError = 'Ноды не обновлены. Повторите Gen nodes';
+        notifyError('Не удалось подобрать ноды панели', error);
+    } finally {
+        if (rollId === panelRollId) {
+            panelRollController = null;
+            syncNodePanel();
+        }
+    }
 }
 
 async function installSettingsUi() {
@@ -513,6 +602,19 @@ function startPlanRequest(type) {
             planController.abort();
         }
     });
+    if (settings.planNodePanel) {
+        const nodes = settings.planPanelNodes.slice(0, settings.planNodeCount);
+        const valid = nodes.length === settings.planNodeCount
+            && blockPlanNode(nodes, settings.planBlockedNode).every(node => node.trim());
+        if (!valid) notifyPlanSkipped('Выберите комбинацию кнопкой Gen nodes перед генерацией');
+        // Freeze the visible combination for this turn, even if Gen nodes is clicked during the helper request.
+        return {
+            requestId, cancel, unsubscribe,
+            planSettings: { ...settings },
+            ready: Promise.resolve(valid ? 'file' : 'cancelled'),
+            task: Promise.resolve(valid ? nodes : { cancelled: true }),
+        };
+    }
     if (settings.planSource === 'file') {
         // File mode never calls the plan API, so a stopped API must not block this generation.
         const manual = settings.planManualSelection;
@@ -553,14 +655,14 @@ function startPlanRequest(type) {
     };
 }
 
-function queuePlanForEnd(nodes) {
+function queuePlanForEnd(nodes, planSettings = settings) {
     if (!nodes) {
         pendingPlanLine = null;
         return;
     }
     pendingPlanLine = formatPlanLine(
-        limitPlanNodes(blockPlanNode(nodes, settings.planBlockedNode), settings.planNodeCount),
-        settings.planInjectPrompt,
+        limitPlanNodes(blockPlanNode(nodes, planSettings.planBlockedNode), planSettings.planNodeCount),
+        planSettings.planInjectPrompt,
     );
 }
 
@@ -825,7 +927,7 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
                     }
                     stopGeneration(abortGeneration);
                 } else if (planRequests.isCurrent(planRun.requestId)) {
-                    queuePlanForEnd(nodes);
+                    queuePlanForEnd(nodes, planRun.planSettings);
                 } else {
                     // The API answers every POST. This body belongs to the click that sent it, not the newer one.
                     console.info(`[${EXTENSION_NAME}] План ${planRun.requestId} отброшен: уже есть более новый запрос`);
@@ -845,6 +947,7 @@ jQuery(async () => {
         loadSettings();
         installResultUi();
         installPlanFinalizer();
+        syncNodePanel();
         console.log(`[${EXTENSION_NAME}] Ready`);
     } catch (error) {
         notifyError('Ошибка запуска расширения', error);

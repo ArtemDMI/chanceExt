@@ -6,6 +6,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 import * as chance from './chance.js';
+import { normalizeNodePanelPosition } from './node-panel.js';
 
 const indexUrl = new URL('./index.js', import.meta.url);
 // Run the production interceptor without SillyTavern's imports or browser startup, and without experimental VM flags.
@@ -14,6 +15,18 @@ const source = readFileSync(indexUrl, 'utf8')
     .replaceAll('import.meta.url', JSON.stringify(indexUrl.href));
 const catalogText = 'Alpha = 1\nBeta = 3\n---\nGamma = 2\nDelta = 4';
 const probabilityUrl = '/api/backends/chat-completions/generate';
+
+test('reorganized settings preserve every control and its existing ID', () => {
+    const html = readFileSync(new URL('./settings.html', import.meta.url), 'utf8');
+    const controls = [...html.matchAll(/<(?:input|select|textarea)\b[^>]*\bid="([^"]+)"/g)].map(match => match[1]);
+    assert.deepEqual(controls.sort(), [
+        'chance_ext_enabled', 'chance_ext_bonus', 'chance_ext_model', 'chance_ext_plan_injecting',
+        'chance_ext_plan_source', 'chance_ext_plan_node_count', 'chance_ext_plan_blocked_node',
+        'chance_ext_plan_manual', 'chance_ext_plan_node_panel', 'chance_ext_plan_weighted',
+        'chance_ext_plan_flatten', 'chance_ext_plan_temperature', 'chance_ext_plan_inject_prompt',
+    ].sort());
+    assert.equal(html.includes('Gen nodes подбирает комбинацию'), false);
+});
 
 function deferred() {
     let resolve;
@@ -36,7 +49,7 @@ function createHarness(t, options = {}) {
         'CHAT_COMPLETION_PROMPT_READY', 'GENERATE_AFTER_DATA', 'GENERATION_STOPPED', 'CHAT_CHANGED',
     ].map(name => [name, name]));
     const context = {
-        chat: [{ is_user: true, mes: 'Open the door' }],
+        chat: [{ name: 'User', is_user: true, mes: 'Open the door' }],
         extensionSettings: {},
         saveSettingsDebounced() {},
         eventSource,
@@ -46,6 +59,7 @@ function createHarness(t, options = {}) {
     const picks = [];
     const randomPicks = [];
     const aborts = [];
+    const panels = [];
     const sandbox = vm.createContext({
         ...chance,
         AbortController,
@@ -57,6 +71,18 @@ function createHarness(t, options = {}) {
         SillyTavern: { getContext: () => context },
         getRequestHeaders: () => ({ 'Content-Type': 'application/json' }),
         normalizeManualLayout: layout => layout ?? null,
+        normalizeNodePanelPosition,
+        createNodePanel(panelOptions) {
+            const panel = {
+                options: panelOptions,
+                states: [],
+                destroyed: false,
+                update(state) { this.states.push(state); },
+                destroy() { this.destroyed = true; },
+            };
+            panels.push(panel);
+            return panel;
+        },
         jQuery: callback => { assert.equal(typeof callback, 'function'); },
         chooseManualPlanNodes(catalog, count, pickerOptions) {
             const selection = deferred();
@@ -85,12 +111,15 @@ function createHarness(t, options = {}) {
                 }
                 return { ok: true, text: async () => catalogText };
             }
+            if (options.apiResponse && String(url).startsWith('http://127.0.0.1:8010/')) {
+                return options.apiResponse(String(url), init);
+            }
             assert.equal(String(url), probabilityUrl, 'file mode must not call the plan API or health endpoint');
             return options.probabilityResponse ? options.probabilityResponse(init) : probabilityResponse();
         },
     });
     vm.runInContext(source, sandbox, { filename: indexUrl.pathname });
-    const api = vm.runInContext('({ interceptGeneration, settings, installPlanFinalizer, normalizeSettings })', sandbox);
+    const api = vm.runInContext('({ interceptGeneration, settings, installPlanFinalizer, normalizeSettings, syncNodePanel, regeneratePanelNodes })', sandbox);
     Object.assign(api.settings, {
         planInjecting: true,
         planSource: 'file',
@@ -105,6 +134,8 @@ function createHarness(t, options = {}) {
         for (const pick of picks) {
             pick.selection.resolve(null);
         }
+        api.settings.planNodePanel = false;
+        api.syncNodePanel();
     });
     return {
         ...api,
@@ -113,6 +144,7 @@ function createHarness(t, options = {}) {
         picks,
         randomPicks,
         aborts,
+        panels,
         run(type = 'normal', chat = context.chat.map(message => ({ ...message }))) {
             return api.interceptGeneration(chat, 4096, value => aborts.push(value), type);
         },
@@ -332,3 +364,208 @@ for (const failure of ['network', 'http', 'body']) {
         assert.equal(h.finalize().length, 1);
     });
 }
+
+test('panel combination is reused for messages and swipes instead of the API or manual picker', async t => {
+    const h = createHarness(t, { settings: {
+        planNodePanel: true, planPanelNodes: ['Delta', 'Alpha'], planSource: 'api',
+    } });
+    for (const type of ['normal', 'swipe', 'normal']) {
+        await h.run(type);
+        assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+    }
+    assert.equal(h.picks.length, 0);
+    assert.equal(h.randomPicks.length, 0);
+    assert.equal(h.requests.length, 3);
+    assert.ok(h.requests.every(request => request.url === probabilityUrl));
+    assert.deepEqual([...h.settings.planPanelNodes], ['Delta', 'Alpha']);
+    assert.deepEqual(h.aborts, []);
+});
+
+test('showing the panel, changing chats and stopping generation never draws nodes or closes the panel', t => {
+    const h = createHarness(t, { settings: { planNodePanel: true, planPanelNodes: ['Delta', 'Alpha'] } });
+    h.syncNodePanel();
+    h.emit('CHAT_CHANGED');
+    h.emit('GENERATION_STOPPED');
+    h.syncNodePanel();
+    assert.equal(h.requests.length, 0);
+    assert.equal(h.randomPicks.length, 0);
+    assert.equal(h.panels.length, 1);
+    assert.equal(h.panels[0].destroyed, false);
+    assert.deepEqual([...h.panels[0].states.at(-1).nodes], ['Delta', 'Alpha']);
+});
+
+test('disabling the panel restores the original API flow without losing the pinned nodes', async t => {
+    const h = createHarness(t, {
+        settings: { planNodePanel: true, planPanelNodes: ['Delta', 'Alpha'], planSource: 'api' },
+        apiResponse: async url => url.endsWith('/health')
+            ? { ok: true }
+            : { ok: true, json: async () => ({ nodes: Array.from({ length: 10 }, (_, index) => `API ${index + 1}`) }) },
+    });
+    h.syncNodePanel();
+    h.settings.planNodePanel = false;
+    h.syncNodePanel();
+    await h.run();
+    assert.equal(h.panels[0].destroyed, true);
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [API 1]\n2. [API 2]');
+    assert.equal(h.requests.filter(request => request.url.endsWith('/health')).length, 1);
+    assert.equal(h.requests.filter(request => request.url.endsWith('/plans')).length, 1);
+    assert.equal(h.requests.filter(request => request.url === probabilityUrl).length, 1);
+    assert.equal(h.picks.length, 0);
+    assert.deepEqual([...h.settings.planPanelNodes], ['Delta', 'Alpha']);
+});
+
+test('disabling the panel restores the manual picker and preserves the pinned nodes', async t => {
+    const h = createHarness(t, { settings: { planNodePanel: true, planPanelNodes: ['Delta', 'Alpha'] } });
+    h.settings.planNodePanel = false;
+    h.syncNodePanel();
+    const run = h.run();
+    await setImmediate();
+    assert.equal(h.picks.length, 1);
+    h.picks[0].selection.resolve(['Gamma', 'Beta']);
+    await run;
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Gamma]\n2. [Beta]');
+    assert.deepEqual([...h.settings.planPanelNodes], ['Delta', 'Alpha']);
+});
+
+test('Gen nodes uses the existing random rules without generating a message or changing manual history', async t => {
+    const h = createHarness(t, { settings: {
+        planNodePanel: true, planInjecting: false, planSource: 'api',
+        planWeighted: false, planWeightFlatten: 0.7, planBlockedNode: 'Gamma',
+        planManualLastNodes: ['Delta'],
+    } });
+    h.syncNodePanel();
+    await h.panels[0].options.onGenerate();
+    assert.equal(h.requests.length, 1);
+    assert.ok(h.requests[0].url.includes('/nodes.txt?'));
+    assert.equal(h.requests[0].init.cache, 'no-store');
+    assert.deepEqual(h.randomPicks[0].options, { weighted: false, flatten: 0.7, blockedText: 'Gamma' });
+    assert.deepEqual([...h.settings.planPanelNodes], ['Delta', 'Alpha']);
+    assert.deepEqual([...h.context.extensionSettings.ChanceExt.planPanelNodes], ['Delta', 'Alpha']);
+    assert.deepEqual(h.settings.planManualLastNodes, ['Delta']);
+    assert.equal(h.finalize().length, 1);
+    assert.equal(h.picks.length, 0);
+    assert.equal(h.panels[0].states.at(-1).busy, false);
+});
+
+test('weighted panel rolls honor flattening, count and blocked nodes on every explicit reroll', async t => {
+    const h = createHarness(t, { settings: {
+        planNodePanel: true, planWeighted: true, planWeightFlatten: 0.4, planBlockedNode: 'Beta',
+    } });
+    await h.regeneratePanelNodes();
+    await h.regeneratePanelNodes();
+    assert.equal(h.randomPicks.length, 2);
+    assert.ok(h.randomPicks.every(pick => pick.count === 2));
+    assert.deepEqual(h.randomPicks[1].options, { weighted: true, flatten: 0.4, blockedText: 'Beta' });
+    assert.equal(h.settings.planPanelNodes.includes('Beta'), false);
+    assert.equal(h.requests.length, 2);
+});
+
+test('a running generation keeps its panel snapshot when Gen nodes or settings change', async t => {
+    const probability = deferred();
+    t.after(() => probability.resolve(probabilityResponse()));
+    const h = createHarness(t, {
+        probabilityResponse: () => probability.promise,
+        settings: { planNodePanel: true, planPanelNodes: ['Delta', 'Alpha'] },
+    });
+    const run = h.run();
+    await setImmediate();
+    h.settings.planPanelNodes = ['Gamma', 'Beta'];
+    h.settings.planNodeCount = 1;
+    h.settings.planBlockedNode = 'Alpha';
+    h.settings.planInjectPrompt = 'Changed {{plan}}';
+    probability.resolve(probabilityResponse());
+    await run;
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+    await h.run('swipe');
+    assert.equal(h.finalize().at(-1).content, 'Changed 1. [Gamma]');
+});
+
+for (const nodes of [[], ['Alpha'], ['Alpha', 'Gamma']]) {
+    test(`panel generation refuses an incomplete or newly blocked selection: ${JSON.stringify(nodes)}`, async t => {
+        const h = createHarness(t, { settings: {
+            planNodePanel: true, planPanelNodes: nodes, planBlockedNode: 'Gamma',
+        } });
+        await h.run();
+        assert.deepEqual(h.aborts, [true]);
+        assert.equal(h.requests.length, 0);
+        assert.equal(h.picks.length, 0);
+        assert.equal(h.finalize().length, 1);
+    });
+}
+
+test('only the latest panel roll can replace the pinned combination', async t => {
+    const firstFile = deferred();
+    let calls = 0;
+    const h = createHarness(t, {
+        settings: { planNodePanel: true, planPanelNodes: ['Old', 'Selection'] },
+        fileResponse: () => ++calls === 1 ? firstFile.promise : { ok: true, text: async () => catalogText },
+    });
+    const oldRoll = h.regeneratePanelNodes();
+    await h.regeneratePanelNodes();
+    assert.equal(h.requests[0].init.signal.aborted, true);
+    const latest = [...h.settings.planPanelNodes];
+    firstFile.resolve({ ok: true, text: async () => 'Obsolete = 1\n---\nAnswer = 1' });
+    await oldRoll;
+    assert.deepEqual([...h.settings.planPanelNodes], latest);
+    assert.equal(h.randomPicks.length, 1);
+});
+
+for (const change of ['disable', 'count', 'weighted', 'flatten', 'blocked']) {
+    test(`panel roll cannot pin stale results after ${change} changes`, async t => {
+        const file = deferred();
+        const h = createHarness(t, {
+            settings: { planNodePanel: true, planPanelNodes: ['Old', 'Selection'] },
+            fileResponse: () => file.promise,
+        });
+        const run = h.regeneratePanelNodes();
+        if (change === 'disable') { h.settings.planNodePanel = false; h.syncNodePanel(); }
+        if (change === 'count') h.settings.planNodeCount = 1;
+        if (change === 'weighted') h.settings.planWeighted = false;
+        if (change === 'flatten') h.settings.planWeightFlatten = 0.5;
+        if (change === 'blocked') h.settings.planBlockedNode = 'Alpha';
+        file.resolve({ ok: true, text: async () => catalogText });
+        await run;
+        assert.deepEqual([...h.settings.planPanelNodes], ['Old', 'Selection']);
+        assert.equal(h.randomPicks.length, 0);
+        if (change === 'disable') {
+            assert.equal(h.requests[0].init.signal.aborted, true);
+            assert.equal(h.panels[0].destroyed, true);
+        }
+    });
+}
+
+test('failed or short panel rolls retain the previous combination', async t => {
+    for (const response of [
+        () => { throw new TypeError('Offline'); },
+        () => ({ ok: false, status: 500 }),
+        () => ({ ok: true, text: async () => 'Only one section = 1' }),
+    ]) {
+        const h = createHarness(t, {
+            settings: { planNodePanel: true, planPanelNodes: ['Delta', 'Alpha'] },
+            fileResponse: response,
+        });
+        await h.regeneratePanelNodes();
+        assert.deepEqual([...h.settings.planPanelNodes], ['Delta', 'Alpha']);
+        assert.ok(h.panels[0].states.at(-1).error);
+        assert.equal(h.panels[0].states.at(-1).busy, false);
+        await h.run();
+        assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+    }
+});
+
+test('panel preferences survive normalization and position changes are saved', t => {
+    const h = createHarness(t, { settings: { planNodePanel: true, planPanelPosition: { x: 40, y: 100 } } });
+    h.syncNodePanel();
+    h.panels[0].options.onPositionChange({ x: 180, y: 220 });
+    assert.deepEqual(h.context.extensionSettings.ChanceExt.planPanelPosition, { x: 180, y: 220 });
+    const normalized = h.normalizeSettings({
+        planNodePanel: true, planPanelNodes: ['Delta', 'Alpha'], planPanelPosition: { x: 180, y: 220 },
+    });
+    assert.equal(normalized.planNodePanel, true);
+    assert.deepEqual([...normalized.planPanelNodes], ['Delta', 'Alpha']);
+    assert.deepEqual(normalized.planPanelPosition, { x: 180, y: 220 });
+    for (const nodes of [null, 'Alpha', [' '], [1], Array(11).fill('Alpha')]) {
+        assert.deepEqual([...h.normalizeSettings({ planPanelNodes: nodes }).planPanelNodes], []);
+    }
+    assert.deepEqual(normalizeNodePanelPosition({ x: -10, y: Infinity }), { x: 0, y: null });
+});
