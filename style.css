@@ -115,7 +115,8 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 0 0 0 27px;
+    list-style: none;
+    padding: 0;
     margin: 0;
 }
 
@@ -123,11 +124,6 @@
     padding: 5px 4px;
     overflow-wrap: anywhere;
     border-bottom: 1px solid #242b37;
-}
-
-.chance-ext-node-panel-list li::marker {
-    color: #7dcea0;
-    font-weight: 700;
 }
 
 .chance-ext-node-panel-list .is-empty {

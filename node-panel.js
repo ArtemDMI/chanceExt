@@ -80,7 +80,7 @@ export function createNodePanel({ position, onGenerate, onPositionChange }) {
             }
             list.replaceChildren(fragment);
             const valid = nodes.length >= count && blockedNodes.slice(0, count).every(node => node.trim());
-            status.textContent = busy ? 'Подбор нод...' : error || (valid ? '' : 'Нажмите Gen nodes');
+            status.textContent = error || (valid ? '' : 'Нажмите Gen nodes');
             status.hidden = !status.textContent;
             button.setAttribute('aria-busy', String(busy));
             place();
