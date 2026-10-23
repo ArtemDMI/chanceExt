@@ -7,7 +7,7 @@ export function normalizeManualLayout(value) {
         return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
     };
     return {
-        columns: number(source.columns, 6, 1, 10),
+        columns: number(source.columns, 6, 1, 15),
         fontSize: number(source.fontSize, 13, 10, 22),
         width: number(source.width, 1200, 320, 4000),
         height: number(source.height, 800, 280, 2400),
@@ -56,7 +56,7 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
                 <div class="chance-ext-picker-slots"></div>
                 <button type="button" class="chance-ext-picker-repeat">Повтор</button>
                 <div class="chance-ext-picker-size-controls">
-                    <label>Колонки <input class="chance-ext-picker-columns" type="number" min="1" max="10"></label>
+                    <label>Колонки <input class="chance-ext-picker-columns" type="number" min="1" max="15"></label>
                     <label>Шрифт <input class="chance-ext-picker-font" type="number" min="10" max="22"></label>
                 </div>
                 <button type="button" class="chance-ext-picker-close" aria-label="Отменить генерацию">×</button>

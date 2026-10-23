@@ -14,7 +14,7 @@ test('manual layout preserves preferences and clamps sizes to supported bounds',
         columns: 4, fontSize: 15, width: 950, height: 650, order: ['b', 'a'],
     });
     assert.deepEqual(normalizeManualLayout({ columns: 100, fontSize: 0, width: 10, height: 99999 }), {
-        columns: 10, fontSize: 10, width: 320, height: 2400, order: [],
+        columns: 15, fontSize: 10, width: 320, height: 2400, order: [],
     });
 });
 
