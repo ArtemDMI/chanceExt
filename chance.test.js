@@ -217,7 +217,7 @@ test('formats one plan line and appends it after the user turn', () => {
     assert.equal(line.includes('10. [внезапные события]'), true);
     assert.equal(line.includes('\n'), true);
     const injected = formatPlanLine(nodes);
-    assert.equal(injected.trimEnd().endsWith('10. [внезапные события]'), true);
+    assert.equal(injected.includes(nodes.map((node, index) => `${index + 1}. [${node}]`).join('\n')), true);
     assert.equal(appendPlanLine('я прыгаю', line), `я прыгаю\n${line}`);
 });
 

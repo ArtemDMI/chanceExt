@@ -49,3 +49,330 @@
 .chance-ext-result-icon[data-outcome='failure'] {
     color: #ef4444;
 }
+
+.chance-ext-picker {
+    box-sizing: border-box;
+    position: fixed;
+    inset: 0;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    min-width: min(320px, calc(100vw - 24px));
+    min-height: min(280px, calc(100dvh - 24px));
+    margin: auto;
+    padding: 12px;
+    border: 1px solid #465064;
+    border-radius: 10px;
+    background: #12141a;
+    color: #e8ecf3;
+    font: 14px/1.4 'Segoe UI', sans-serif;
+    resize: both;
+    overflow: hidden;
+    text-align: left;
+}
+
+.chance-ext-picker[open] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chance-ext-picker::backdrop {
+    background: rgb(0 0 0 / 75%);
+}
+
+.chance-ext-picker * {
+    box-sizing: border-box;
+}
+
+.chance-ext-picker button,
+.chance-ext-picker input {
+    color: inherit;
+    font: inherit;
+}
+
+.chance-ext-picker-header,
+.chance-ext-picker-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.chance-ext-picker-header {
+    justify-content: space-between;
+}
+
+.chance-ext-picker-progress {
+    color: #7dcea0;
+    margin-left: 10px;
+}
+
+.chance-ext-picker button {
+    cursor: pointer;
+    margin: 0;
+}
+
+.chance-ext-picker-close,
+.chance-ext-picker-left,
+.chance-ext-picker-right {
+    border: 1px solid #465064;
+    border-radius: 5px;
+    background: #1b1f28;
+    min-width: 32px;
+    height: 30px;
+    padding: 0 6px;
+}
+
+.chance-ext-picker-close {
+    font-size: 22px !important;
+}
+
+.chance-ext-picker-hint {
+    color: #8b95a8;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.chance-ext-picker-slots {
+    display: flex;
+    overflow-x: auto;
+    gap: 6px;
+    padding-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.chance-ext-picker-slot {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1 0 100px;
+    min-width: 0;
+}
+
+.chance-ext-picker-slot > span {
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--node-color);
+    color: #10131a;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    font-weight: 800;
+    cursor: grab;
+}
+
+.chance-ext-picker input {
+    border: 1px solid #465064;
+    border-radius: 4px;
+    background: #0f1218;
+    padding: 5px;
+    min-width: 0;
+    margin: 0;
+}
+
+.chance-ext-picker-slot input {
+    width: 100%;
+    border-color: #9b535b;
+}
+
+.chance-ext-picker-slot input.is-filled {
+    border-color: var(--node-color);
+    background: color-mix(in srgb, var(--node-color) 16%, #0f1218);
+}
+
+.chance-ext-picker input:focus-visible,
+.chance-ext-picker button:focus-visible {
+    outline: 2px solid #e4c76a;
+    outline-offset: -2px;
+}
+
+.chance-ext-picker-slot input.is-invalid {
+    background: #41242c;
+}
+
+.chance-ext-picker-toolbar {
+    flex-wrap: wrap;
+}
+
+.chance-ext-picker-toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.chance-ext-picker-toolbar input[type='number'] {
+    width: 50px;
+}
+
+.chance-ext-picker-search {
+    flex: 1;
+    min-width: 120px !important;
+}
+
+.chance-ext-picker-catalog {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: max(150px, calc((100% - (var(--picker-columns) - 1) * 8px) / var(--picker-columns)));
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1;
+    min-height: 40px;
+    position: relative;
+    overscroll-behavior: contain;
+    scrollbar-color: #465064 #12141a;
+    scrollbar-width: thin;
+}
+
+.chance-ext-picker-column {
+    min-width: 0;
+    border-left: 1px solid #465064;
+    padding-left: 4px;
+}
+
+.chance-ext-picker-item,
+.chance-ext-picker-separator {
+    display: flex;
+    align-items: stretch;
+    position: relative;
+}
+
+.chance-ext-picker-grip {
+    width: 12px;
+    flex-shrink: 0;
+    color: #667286;
+    text-align: center;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    overflow: hidden;
+    line-height: 1;
+    align-self: center;
+}
+
+.chance-ext-picker-node {
+    --heat-fade: #12141a;
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    border: 0;
+    border-radius: 3px;
+    background: var(--heat-fade);
+    padding: 0 3px;
+    text-align: left;
+    font-size: var(--picker-font) !important;
+    line-height: 1 !important;
+}
+
+.chance-ext-picker-node.is-stripe {
+    --heat-fade: #0e1015;
+}
+
+.chance-ext-picker-node::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: calc(var(--heat-fill) * 100%);
+    background: linear-gradient(to right, var(--heat-fade), #172947 50%);
+    pointer-events: none;
+}
+
+.chance-ext-picker-node-label {
+    position: relative;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chance-ext-picker-node:hover:not(:disabled) {
+    background: #205138;
+}
+
+.chance-ext-picker-node:hover::before,
+.chance-ext-picker-node.is-used::before {
+    display: none;
+}
+
+.chance-ext-picker-node.is-used {
+    background: color-mix(in srgb, var(--node-color) 42%, black);
+}
+
+.chance-ext-picker-node.is-active {
+    box-shadow: inset 0 0 0 1px #e4c76a;
+}
+
+.chance-ext-picker-node:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    text-decoration: line-through;
+}
+
+.chance-ext-picker-badge:empty {
+    display: none;
+}
+
+.chance-ext-picker-badge {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-width: 17px;
+    height: 17px;
+    margin-right: 4px;
+    padding: 0 3px;
+    border-radius: 12px;
+    color: #10131a;
+    background: var(--node-color);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.chance-ext-picker-separator {
+    background: #000;
+}
+
+.chance-ext-picker-separator .chance-ext-picker-grip {
+    width: 100%;
+    height: 100%;
+    font-size: 0;
+}
+
+.chance-ext-picker .is-drop-target {
+    box-shadow: inset 0 2px 0 #7ec8ff;
+}
+
+.chance-ext-picker-links {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: hidden;
+    opacity: 0.5;
+}
+
+.chance-ext-picker-links line {
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+}
+
+@media (max-width: 600px) {
+    .chance-ext-picker {
+        padding: 8px;
+        gap: 7px;
+        resize: none;
+    }
+
+    .chance-ext-picker-hint {
+        font-size: 11px;
+    }
+
+    .chance-ext-picker-search {
+        order: 1;
+        flex-basis: 100%;
+    }
+}

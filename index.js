@@ -1,4 +1,5 @@
 import { getRequestHeaders } from '../../../../script.js';
+import { chooseManualPlanNodes, normalizeManualLayout } from './manual-picker.js';
 import {
     RANDOMIZER_SCHEMA,
     appendFailureMarker,
@@ -51,6 +52,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     planBlockedNode: '',
     planNodeCount: 10,
     planSource: 'api',
+    planManualSelection: false,
+    planManualLayout: null,
     planWeighted: true,
     planWeightFlatten: 0,
     planInjectPrompt: DEFAULT_PLAN_INJECT_PROMPT,
@@ -94,6 +97,8 @@ function normalizeSettings(raw) {
         planBlockedNode: String(source.planBlockedNode ?? '').trim(),
         planNodeCount: normalizePlanNodeCount(source.planNodeCount),
         planSource: source.planSource === 'file' ? 'file' : 'api',
+        planManualSelection: source.planManualSelection === true,
+        planManualLayout: normalizeManualLayout(source.planManualLayout),
         // Digits in nodes.txt are the weights unless the switch is turned off.
         planWeighted: source.planWeighted !== false,
         planWeightFlatten: normalizePlanWeightFlatten(source.planWeightFlatten),
@@ -123,6 +128,7 @@ function updateSettingsUi() {
     $('#chance_ext_plan_blocked_node').val(settings.planBlockedNode);
     $('#chance_ext_plan_node_count').val(settings.planNodeCount);
     $('#chance_ext_plan_source').val(settings.planSource);
+    $('#chance_ext_plan_manual').prop('checked', settings.planManualSelection);
     $('#chance_ext_plan_weighted').prop('checked', settings.planWeighted);
     $('#chance_ext_plan_flatten').val(settings.planWeightFlatten);
     $('#chance_ext_plan_inject_prompt').val(settings.planInjectPrompt);
@@ -199,6 +205,11 @@ function bindSettingsUi() {
         settings.planWeighted = event.target.checked;
         saveSettings();
         syncPlanSourceRows();
+    });
+
+    $('#chance_ext_plan_manual').on('change', event => {
+        settings.planManualSelection = event.target.checked;
+        saveSettings();
     });
 
     $('#chance_ext_plan_flatten').on('change', event => {
@@ -339,6 +350,9 @@ function notifyPlanSkipped(message, error) {
 }
 
 async function requestFilePlanNodes(requestId, controller) {
+    const manual = settings.planManualSelection;
+    const count = settings.planNodeCount;
+    const blockedText = settings.planBlockedNode;
     try {
         const url = new URL('./nodes.txt', import.meta.url);
         // The catalog is read on every request so edits show up without a reload.
@@ -354,17 +368,32 @@ async function requestFilePlanNodes(requestId, controller) {
             throw new Error(`nodes.txt: HTTP ${response.status}`);
         }
 
-        const nodes = pickRandomPlanNodes(parseNodeCatalog(await response.text()), settings.planNodeCount, {
+        const catalog = parseNodeCatalog(await response.text());
+        if (!planRequests.isCurrent(requestId)) {
+            return null;
+        }
+        const nodes = manual ? await chooseManualPlanNodes(catalog, count, {
+            blockedText,
+            signal: controller.signal,
+            layout: settings.planManualLayout,
+            onLayoutChange: layout => {
+                settings.planManualLayout = layout;
+                saveSettings();
+            },
+        }) : pickRandomPlanNodes(catalog, count, {
             weighted: settings.planWeighted,
             flatten: settings.planWeightFlatten,
-            blockedText: settings.planBlockedNode,
+            blockedText,
         });
+        if (manual && !nodes) {
+            return { cancelled: true };
+        }
         if (!planRequests.isCurrent(requestId)) {
             return null;
         }
         if (nodes.length === 0) {
             notifyPlanSkipped('В nodes.txt нет нод для цепочки');
-            return null;
+            return manual ? { cancelled: true } : null;
         }
         console.info(`[${EXTENSION_NAME}] Цепочка из файла`, { requestId, nodes });
         toastr.success(nodes.join(' | '), 'Ноды из файла', {
@@ -379,8 +408,8 @@ async function requestFilePlanNodes(requestId, controller) {
         if (!planRequests.isCurrent(requestId) || error?.name === 'AbortError') {
             return null;
         }
-        notifyPlanSkipped('nodes.txt не прочитан, генерация без цепочки', error);
-        return null;
+        notifyPlanSkipped(manual ? 'Ручной выбор не открыт, генерация отменена' : 'nodes.txt не прочитан, генерация без цепочки', error);
+        return manual ? { cancelled: true } : null;
     }
 }
 
@@ -476,12 +505,15 @@ function startPlanRequest(type) {
     });
     if (settings.planSource === 'file') {
         // File mode never calls the plan API, so a stopped API must not block this generation.
+        const manual = settings.planManualSelection;
+        const task = requestFilePlanNodes(requestId, planController);
         return {
             requestId,
             cancel,
             unsubscribe,
-            ready: Promise.resolve('file'),
-            task: requestFilePlanNodes(requestId, planController),
+            // Manual selection must finish before even the helper model starts a request.
+            ready: manual ? task.then(nodes => nodes?.cancelled || !nodes ? 'cancelled' : 'file') : Promise.resolve('file'),
+            task,
         };
     }
 
@@ -550,6 +582,11 @@ function installPlanFinalizer() {
     });
     context.eventSource.on(context.eventTypes.GENERATION_STOPPED, () => {
         pendingPlanLine = null;
+        planRequests.begin();
+    });
+    context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => {
+        pendingPlanLine = null;
+        planRequests.begin();
     });
 }
 
@@ -769,7 +806,10 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
         try {
             if (planRun) {
                 const nodes = await planRun.task;
-                if (nodes?.offline) {
+                if (nodes?.cancelled) {
+                    pendingPlanLine = null;
+                    stopGeneration(abortGeneration);
+                } else if (nodes?.offline) {
                     if (planRequests.isCurrent(planRun.requestId)) {
                         notifyPlanApiOff();
                     }
