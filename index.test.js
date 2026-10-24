@@ -768,11 +768,10 @@ test('no-op Send, existing swipe and rejected hosts cannot leak a panel choice i
     }
 });
 
-test('repeat refuses wrong counts, blocked and deleted catalog nodes without mutating saved selections', async t => {
+test('repeat refuses wrong counts and blocked nodes without mutating saved selections', async t => {
     for (const settings of [
         { planNodeCount: 1 },
         { planBlockedNode: 'Alpha' },
-        { planManualLastNodes: ['Delta', 'Deleted'] },
     ]) {
         const h = createHarness(t, { settings: {
             planManualLastNodes: ['Delta', 'Alpha'], planPanelNodes: ['Gamma', 'Beta'], ...settings,
@@ -785,7 +784,24 @@ test('repeat refuses wrong counts, blocked and deleted catalog nodes without mut
         assert.equal(h.finalize().length, 1);
         assert.deepEqual([...h.settings.planManualLastNodes], previous);
         assert.deepEqual(h.settings.planPanelNodes, ['Gamma', 'Beta']);
-        assert.equal(h.requests.length, settings.planManualLastNodes ? 1 : 0);
+        assert.equal(h.requests.length, 0);
+    }
+});
+
+test('manual freeform nodes are saved and repeated by both actions without requiring catalog membership', async t => {
+    const nodes = ['A custom event with several words', 'Another event absent from nodes.txt'];
+    const h = createHarness(t);
+    const manual = h.run();
+    await setImmediate();
+    h.picks[0].selection.resolve(nodes);
+    await manual;
+    assert.deepEqual([...h.settings.planManualLastNodes], nodes);
+    assert.equal(h.finalize().at(-1).content, `Plan:\n1. [${nodes[0]}]\n2. [${nodes[1]}]`);
+    for (const action of ['send', 'swipe']) {
+        await h.runPanelAction(action, 'repeat');
+        assert.equal(h.picks.length, 1);
+        assert.equal(h.finalize().at(-1).content, `Plan:\n1. [${nodes[0]}]\n2. [${nodes[1]}]`);
+        assert.deepEqual([...h.settings.planManualLastNodes], nodes);
     }
 });
 

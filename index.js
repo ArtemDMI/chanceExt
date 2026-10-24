@@ -336,7 +336,7 @@ async function runPanelAction(action, mode) {
             if (!response.ok) throw new Error(`nodes.txt: HTTP ${response.status}`);
             nodes = resolvePreviousPlanNodes(parseNodeCatalog(await response.text()), planSettings.planNodeCount,
                 previousNodes, planSettings.planBlockedNode);
-            if (!nodes) throw new Error('Прошлый выбор больше не соответствует каталогу или запрещённым нодам');
+            if (!nodes) throw new Error('Прошлый выбор содержит пустые или запрещённые ноды');
         }
         if (operation.cancelled || operation.chatId !== SillyTavern.getContext().chatId || isGenerating()
             || !actionPanelAvailable() || settings.planNodeCount !== planSettings.planNodeCount

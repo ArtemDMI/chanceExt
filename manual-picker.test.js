@@ -33,11 +33,6 @@ test('an already cancelled picker never opens a window', async () => {
     assert.equal(await chooseManualPlanNodes([], 3, { signal: controller.signal }), null);
 });
 
-test('an empty or entirely blocked catalog cannot silently start manual generation', () => {
-    assert.throws(() => chooseManualPlanNodes([], 3), /нет доступных нод/);
-    assert.throws(() => chooseManualPlanNodes([[{ name: 'Alpha', weight: 1 }]], 1, { blockedText: 'alpha' }), /нет доступных нод/);
-});
-
 test('repeat resolves the saved order against the current catalog without truncating or mutating it', () => {
     const catalog = [[{ name: 'Alpha', weight: 1 }], [{ name: 'Beta', weight: 3 }]];
     const saved = ['beta', ' ALPHA ', 'beta'];
@@ -45,7 +40,15 @@ test('repeat resolves the saved order against the current catalog without trunca
     assert.deepEqual(saved, ['beta', ' ALPHA ', 'beta']);
     assert.equal(resolvePreviousPlanNodes(catalog, 2, saved), null);
     assert.equal(resolvePreviousPlanNodes(catalog, 3, saved, 'alpha'), null);
-    assert.equal(resolvePreviousPlanNodes(catalog, 1, ['Missing']), null);
+    assert.deepEqual(resolvePreviousPlanNodes(catalog, 1, ['Missing']), ['Missing']);
     assert.equal(resolvePreviousPlanNodes(catalog, 1, [null]), null);
     assert.equal(resolvePreviousPlanNodes(catalog, 1, null), null);
+});
+
+test('freeform nodes can contain any number of words and do not require a catalog', () => {
+    const custom = 'A completely custom event with many words '.repeat(100).trim();
+    assert.deepEqual(resolvePreviousPlanNodes([], 2, [`  ${custom}  `, 'Another event']), [custom, 'Another event']);
+    assert.deepEqual(resolvePreviousPlanNodes([[{ name: 'Alpha', weight: 1 }]], 2, ['alpha', custom]), ['Alpha', custom]);
+    assert.equal(resolvePreviousPlanNodes([], 1, ['   ']), null);
+    assert.equal(resolvePreviousPlanNodes([], 1, ['Forbidden'], 'forbidden'), null);
 });

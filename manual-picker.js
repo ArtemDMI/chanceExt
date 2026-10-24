@@ -20,10 +20,17 @@ function availableNames(sections, blockedText) {
         .map(node => [node.name.toLocaleLowerCase('ru'), node.name]));
 }
 
+function resolveNodeText(value, names, blockedText) {
+    if (typeof value !== 'string') return '';
+    const text = value.trim();
+    if (!text || blockPlanNode([text], blockedText)[0] === ' ') return '';
+    return names.get(text.toLocaleLowerCase('ru')) ?? text;
+}
+
 export function resolvePreviousPlanNodes(sections, count, previousNodes, blockedText = '') {
     if (!Array.isArray(previousNodes) || previousNodes.length !== normalizePlanNodeCount(count)) return null;
     const names = availableNames(sections, blockedText);
-    const nodes = previousNodes.map(node => typeof node === 'string' ? names.get(node.trim().toLocaleLowerCase('ru')) : null);
+    const nodes = previousNodes.map(node => resolveNodeText(node, names, blockedText));
     return nodes.every(Boolean) ? nodes : null;
 }
 
@@ -45,15 +52,12 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         });
     }
     const names = availableNames(sections, options.blockedText);
-    if (names.size === 0) {
-        throw new Error('В nodes.txt нет доступных нод для ручного выбора');
-    }
     const byId = new Map(entries.map(entry => [entry.id, entry]));
     let ordered = layout.order.filter(id => byId.has(id)).map(id => byId.get(id));
     const known = new Set(ordered.map(entry => entry.id));
     ordered.push(...entries.filter(entry => !known.has(entry.id)));
     const totalWeight = entries.reduce((total, node) => total + (node.weight || 0), 0);
-    const canonicalName = value => names.get(value.trim().toLocaleLowerCase('ru')) || '';
+    const canonicalName = value => resolveNodeText(value, names, options.blockedText);
     const color = index => `hsl(${118 - 70 * index / Math.max(1, normalizePlanNodeCount(count) - 1)} 46% 56%)`;
 
     return new Promise((resolve, reject) => {
@@ -248,23 +252,33 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
             input.setAttribute('aria-label', input.placeholder);
             input.autocomplete = 'off';
             input.spellcheck = false;
+            input.title = 'Любой текст ноды. Enter или Tab завершает ввод поля.';
             input.addEventListener('focus', () => {
                 activeIndex = index;
                 label.scrollIntoView({ block: 'nearest', inline: 'nearest' });
                 paintSelection();
             });
-            input.addEventListener('input', () => {
-                const name = canonicalName(input.value);
-                if (name) applyNode(name, index);
-                else paintSelection();
+            // Typing must not submit the last slot on its first character or on a matching catalog prefix.
+            input.addEventListener('input', paintSelection);
+            input.addEventListener('blur', event => {
+                if (settled || !canonicalName(input.value)) return;
+                const selected = inputs.map(input => canonicalName(input.value));
+                // Skip, repeat and close must still win when the user leaves a completed text field to click them.
+                const control = event.relatedTarget?.closest('button, .chance-ext-picker-toolbar, .chance-ext-picker-size-controls');
+                if (selected.every(Boolean)) {
+                    if (!control) finish(selected);
+                } else if (!event.relatedTarget?.closest('.chance-ext-picker-slot')) {
+                    activeIndex = selected.findIndex((name, next) => next > index && !name);
+                    if (activeIndex < 0) activeIndex = selected.findIndex(name => !name);
+                    paintSelection();
+                }
             });
             input.addEventListener('keydown', event => {
                 if (event.key !== 'Tab' && event.key !== 'Enter') return;
-                const prefix = input.value.trim().toLocaleLowerCase('ru');
-                const matches = [...names.values()].filter(name => name.toLocaleLowerCase('ru').startsWith(prefix));
-                if (prefix && matches.length === 1) {
+                const name = canonicalName(input.value);
+                if (name) {
                     event.preventDefault();
-                    applyNode(matches[0], index);
+                    applyNode(name, index);
                 }
             });
             number.addEventListener('dragstart', event => {
