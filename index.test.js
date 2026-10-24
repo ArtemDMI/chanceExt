@@ -65,6 +65,7 @@ function createHarness(t, options = {}) {
     const actionPanels = [];
     const hostCalls = [];
     const pending = [];
+    const settingsHandlers = new Map();
     let harness;
     const hostAction = async (action, ...args) => {
         hostCalls.push({ action, args });
@@ -113,6 +114,7 @@ function createHarness(t, options = {}) {
             return panel;
         },
         jQuery: callback => { assert.equal(typeof callback, 'function'); },
+        $: selector => ({ on: (_events, handler) => settingsHandlers.set(selector, handler) }),
         chooseManualPlanNodes(catalog, count, pickerOptions) {
             const selection = deferred();
             const pick = { catalog, count, ...pickerOptions, selection, aborted: false };
@@ -148,7 +150,7 @@ function createHarness(t, options = {}) {
         },
     });
     vm.runInContext(source, sandbox, { filename: indexUrl.pathname });
-    const api = vm.runInContext('({ interceptGeneration, settings, installPlanFinalizer, normalizeSettings, syncNodePanel, regeneratePanelNodes, syncActionPanel, runPanelAction })', sandbox);
+    const api = vm.runInContext('({ interceptGeneration, settings, installPlanFinalizer, normalizeSettings, syncNodePanel, regeneratePanelNodes, syncActionPanel, runPanelAction, bindSettingsUi })', sandbox);
     Object.assign(api.settings, {
         planInjecting: true,
         planSource: 'file',
@@ -179,6 +181,7 @@ function createHarness(t, options = {}) {
         panels,
         actionPanels,
         hostCalls,
+        settingsHandlers,
         defer(value) {
             const task = deferred();
             pending.push(() => task.resolve(value));
@@ -698,13 +701,14 @@ for (const action of ['send', 'swipe']) {
     }
 }
 
-test('action repeat prefers manual history over pinned panel nodes, including API source', async t => {
+test('inline actions are unavailable for pinned nodes and leave ordinary panel generation unchanged', async t => {
     const h = createHarness(t, { settings: {
         planSource: 'api', planNodePanel: true, planPanelNodes: ['Gamma', 'Beta'],
         planManualLastNodes: ['Delta', 'Alpha'],
     } });
     await h.runPanelAction('send', 'repeat');
-    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+    assert.equal(h.hostCalls.length, 0);
+    assert.equal(h.finalize().length, 1);
     assert.deepEqual(h.settings.planPanelNodes, ['Gamma', 'Beta']);
     assert.deepEqual(h.settings.planManualLastNodes, ['Delta', 'Alpha']);
     assert.equal(h.picks.length, 0);
@@ -875,7 +879,7 @@ test('host generation state blocks actions and lifecycle events refresh panel bu
 });
 
 test('repeat preflight rejects stale count, blocked nodes, visibility, chat and host busy state', { timeout: 3000 }, async t => {
-    for (const change of ['count', 'blocked', 'disabled', 'source', 'plan', 'chat', 'busy']) {
+    for (const change of ['count', 'blocked', 'disabled', 'source', 'manual', 'nodePanel', 'plan', 'chat', 'busy']) {
         let file;
         let busy = false;
         const h = createHarness(t, {
@@ -890,6 +894,8 @@ test('repeat preflight rejects stale count, blocked nodes, visibility, chat and 
         if (change === 'blocked') h.settings.planBlockedNode = 'Alpha';
         if (change === 'disabled') h.settings.planActionPanel = false;
         if (change === 'source') h.settings.planSource = 'api';
+        if (change === 'manual') h.settings.planManualSelection = false;
+        if (change === 'nodePanel') h.settings.planNodePanel = true;
         if (change === 'plan') h.settings.planInjecting = false;
         if (change === 'chat') h.context.chatId = 'another-chat';
         if (change === 'busy') busy = true;
@@ -922,25 +928,16 @@ test('repeat snapshots nodes and injection settings before host awaits probabili
     assert.deepEqual(h.settings.planManualLastNodes, ['Gamma', 'Beta']);
 });
 
-test('action panel position and size persist, normalize and restore independently of the node panel', t => {
+test('inline actions do not use floating geometry or alter node panel preferences', t => {
     const h = createHarness(t, { settings: {
         planActionPosition: { x: 50, y: 80 }, planActionSize: { width: 400, height: 200 },
         planPanelPosition: { x: 10, y: 20 }, planPanelSize: { width: 300, height: 180 },
     } });
     h.syncActionPanel();
     const panel = h.actionPanels[0];
-    assert.deepEqual(panel.options.position, { x: 50, y: 80 });
-    assert.deepEqual(panel.options.size, { width: 400, height: 200 });
-    panel.options.onPositionChange({ x: 100, y: 120 });
-    panel.options.onSizeChange({ width: 600, height: 300 });
-    const saved = h.context.extensionSettings.ChanceExt;
-    assert.deepEqual(saved.planActionPosition, { x: 100, y: 120 });
-    assert.deepEqual(saved.planActionSize, { width: 600, height: 300 });
-    assert.deepEqual(saved.planPanelPosition, { x: 10, y: 20 });
-    assert.deepEqual(saved.planPanelSize, { width: 300, height: 180 });
-    const normalized = h.normalizeSettings(saved);
-    assert.deepEqual(normalized.planActionPosition, saved.planActionPosition);
-    assert.deepEqual(normalized.planActionSize, saved.planActionSize);
+    assert.deepEqual(Object.keys(panel.options), ['onAction']);
+    assert.deepEqual(h.settings.planPanelPosition, { x: 10, y: 20 });
+    assert.deepEqual(h.settings.planPanelSize, { width: 300, height: 180 });
     assert.equal(h.normalizeSettings({}).planActionPanel, true);
     assert.equal(h.normalizeSettings({ planActionPanel: false }).planActionPanel, false);
     h.settings.planActionPanel = false;
@@ -948,27 +945,35 @@ test('action panel position and size persist, normalize and restore independentl
     assert.equal(panel.destroyed, true);
     h.settings.planActionPanel = true;
     h.syncActionPanel();
-    assert.deepEqual(h.actionPanels[1].options.position, saved.planActionPosition);
-    assert.deepEqual(h.actionPanels[1].options.size, saved.planActionSize);
+    assert.equal(h.actionPanels.length, 2);
 });
 
-test('action panel visibility follows its own enable flag, file source or node panel, and plan injection', async t => {
+test('inline actions require enabled controls, file source, manual selection and plan injection without pinned nodes', async t => {
     const h = createHarness(t);
     h.syncActionPanel();
     h.syncActionPanel();
     assert.equal(h.actionPanels.length, 1);
-    for (const settings of [
+    for (const unavailableSettings of [
         { planActionPanel: false },
-        { planActionPanel: true, planInjecting: false },
-        { planInjecting: true, planSource: 'api' },
+        { planInjecting: false },
+        { planSource: 'api' },
+        { planManualSelection: false },
+        { planNodePanel: true },
+        { planSource: 'api', planNodePanel: true },
     ]) {
-        Object.assign(h.settings, settings);
+        Object.assign(h.settings, {
+            planActionPanel: true, planInjecting: true, planSource: 'file',
+            planManualSelection: true, planNodePanel: false, ...unavailableSettings,
+        });
         h.syncActionPanel();
-        await h.runPanelAction('send', 'skip');
+        for (const action of ['send', 'swipe']) {
+            for (const mode of ['skip', 'repeat']) await h.runPanelAction(action, mode);
+        }
         assert.equal(h.actionPanels[0].destroyed, true);
         assert.equal(h.hostCalls.length, 0);
+        assert.equal(h.actionPanels.length, 1);
     }
-    h.settings.planNodePanel = true;
+    Object.assign(h.settings, { planSource: 'file', planNodePanel: false });
     h.syncActionPanel();
     assert.equal(h.actionPanels.length, 2);
     assert.equal(h.actionPanels[1].destroyed, false);
@@ -977,4 +982,18 @@ test('action panel visibility follows its own enable flag, file source or node p
     h.syncActionPanel();
     assert.equal(h.actionPanels[1].states.at(-1).canRepeat, true);
     assert.equal(h.requests.length, 0);
+});
+
+test('toggling manual selection immediately creates and removes inline actions', t => {
+    const h = createHarness(t, { settings: { planManualSelection: false } });
+    h.bindSettingsUi();
+    h.syncActionPanel();
+    assert.equal(h.actionPanels.length, 0);
+    const change = h.settingsHandlers.get('#chance_ext_plan_manual');
+    change({ target: { checked: true } });
+    assert.equal(h.actionPanels.length, 1);
+    assert.equal(h.context.extensionSettings.ChanceExt.planManualSelection, true);
+    change({ target: { checked: false } });
+    assert.equal(h.actionPanels[0].destroyed, true);
+    assert.equal(h.context.extensionSettings.ChanceExt.planManualSelection, false);
 });

@@ -62,8 +62,6 @@ const DEFAULT_SETTINGS = Object.freeze({
     planPanelPosition: null,
     planPanelSize: null,
     planActionPanel: true,
-    planActionPosition: null,
-    planActionSize: null,
     planWeighted: true,
     planWeightFlatten: 0,
     planInjectPrompt: DEFAULT_PLAN_INJECT_PROMPT,
@@ -126,8 +124,6 @@ function normalizeSettings(raw) {
         planPanelPosition: normalizeNodePanelPosition(source.planPanelPosition),
         planPanelSize: normalizeNodePanelSize(source.planPanelSize),
         planActionPanel: source.planActionPanel !== false,
-        planActionPosition: normalizeNodePanelPosition(source.planActionPosition),
-        planActionSize: normalizeNodePanelSize(source.planActionSize),
         // Digits in nodes.txt are the weights unless the switch is turned off.
         planWeighted: source.planWeighted !== false,
         planWeightFlatten: normalizePlanWeightFlatten(source.planWeightFlatten),
@@ -248,6 +244,7 @@ function bindSettingsUi() {
     $('#chance_ext_plan_manual').on('change', event => {
         settings.planManualSelection = event.target.checked;
         saveSettings();
+        syncActionPanel();
     });
 
     $('#chance_ext_plan_node_panel').on('change', event => {
@@ -278,7 +275,8 @@ function bindSettingsUi() {
 }
 
 function actionPanelAvailable() {
-    return settings.planActionPanel && settings.planInjecting && (settings.planSource === 'file' || settings.planNodePanel);
+    return settings.planActionPanel && settings.planInjecting && settings.planSource === 'file'
+        && settings.planManualSelection && !settings.planNodePanel;
 }
 
 function canRepeatSelection() {
@@ -292,19 +290,7 @@ function syncActionPanel() {
         actionPanel = null;
         return;
     }
-    actionPanel ??= createActionPanel({
-        position: settings.planActionPosition,
-        size: settings.planActionSize,
-        onAction: runPanelAction,
-        onPositionChange: position => {
-            settings.planActionPosition = position;
-            saveSettings();
-        },
-        onSizeChange: size => {
-            settings.planActionSize = size;
-            saveSettings();
-        },
-    });
+    actionPanel ??= createActionPanel({ onAction: runPanelAction });
     actionPanel.update({ busy: Boolean(activeAction) || isGenerating(), canRepeat: canRepeatSelection() });
 }
 
@@ -346,7 +332,7 @@ async function runPanelAction(action, mode) {
         if (action === 'send') await sendTextareaMessage();
         else await context.swipe.to(null, 'right');
     } catch (error) {
-        if (!operation.cancelled) notifyError('Не удалось выполнить действие панели', error);
+        if (!operation.cancelled) notifyError('Не удалось выполнить отправку или свайп', error);
     } finally {
         if (activeAction === operation) activeAction = null;
         syncActionPanel();

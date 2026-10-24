@@ -174,32 +174,52 @@
     outline-offset: -2px;
 }
 
-.chance-ext-action-panel {
-    /* Above the chat (30), but below drawers and other panels; modal dialogs use the browser's top layer. */
-    z-index: 31;
+.chance-ext-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    pointer-events: auto;
 }
 
-.chance-ext-action-panel-handle {
-    padding-bottom: 4px;
-    font-size: 12px;
+.chance-ext-actions[hidden] {
+    display: none;
 }
 
-.chance-ext-action-panel-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(4, minmax(0, 1fr));
-    gap: 6px;
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
+#rightSendForm.chance-ext-has-send-actions {
+    /* Reserve space instead of covering the textarea, including ST's narrow mobile layout. */
+    width: calc(var(--bottomFormBlockSize, 32px) + 56px);
+    min-width: calc(var(--bottomFormBlockSize, 32px) + 56px);
+    flex-shrink: 0;
 }
 
-.chance-ext-action-panel button {
+.chance-ext-send-actions {
+    order: 2;
+    width: 54px;
+    height: var(--bottomFormBlockSize, 32px);
+}
+
+.chance-ext-swipe-actions {
+    /* The native arrow/counter column stays intact; the extra arrows sit to its left. */
+    position: absolute;
+    right: 100%;
+    bottom: calc(var(--swipeCounterHeight, 15px) + var(--swipeCounterMargin, 5px));
+    z-index: 9999;
+}
+
+#chat .mes.chance-ext-has-swipe-actions {
+    padding-bottom: 45px;
+}
+
+.chance-ext-actions button {
     display: grid;
     place-items: center;
-    min-width: 0;
+    box-sizing: border-box;
+    flex: 0 0 25px;
+    width: 25px;
+    height: 25px;
     margin: 0;
-    padding: 4px;
+    padding: 2px;
     border: 1px solid #53b77a;
     border-radius: 4px;
     background: #15251d;
@@ -211,29 +231,34 @@
     cursor: pointer;
 }
 
-.chance-ext-action-panel button[data-mode='repeat'] {
+.chance-ext-actions button[data-mode='repeat'] {
     border-color: #d75b65;
     background: #29191e;
     color: #ff6574;
 }
 
-.chance-ext-action-panel button[data-mode='skip']:hover:not(:disabled) {
+.chance-ext-actions button[data-mode='skip']:hover:not(:disabled) {
     background: #203a2b;
 }
 
-.chance-ext-action-panel button[data-mode='repeat']:hover:not(:disabled) {
+.chance-ext-actions button[data-mode='repeat']:hover:not(:disabled) {
     background: #43232b;
 }
 
-.chance-ext-action-panel button svg {
-    width: 28px;
-    height: 28px;
+.chance-ext-actions button svg {
+    width: 20px;
+    height: 20px;
     max-width: 100%;
     max-height: 100%;
     pointer-events: none;
 }
 
-.chance-ext-action-panel button:disabled {
+.chance-ext-actions button:focus-visible {
+    outline: 2px solid var(--SmartThemeBodyColor, #fff);
+    outline-offset: 1px;
+}
+
+.chance-ext-actions button:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
