@@ -15,6 +15,18 @@ export function normalizeManualLayout(value) {
     };
 }
 
+function availableNames(sections, blockedText) {
+    return new Map(sections.flat().filter(node => blockPlanNode([node.name], blockedText)[0] !== ' ')
+        .map(node => [node.name.toLocaleLowerCase('ru'), node.name]));
+}
+
+export function resolvePreviousPlanNodes(sections, count, previousNodes, blockedText = '') {
+    if (!Array.isArray(previousNodes) || previousNodes.length !== normalizePlanNodeCount(count)) return null;
+    const names = availableNames(sections, blockedText);
+    const nodes = previousNodes.map(node => typeof node === 'string' ? names.get(node.trim().toLocaleLowerCase('ru')) : null);
+    return nodes.every(Boolean) ? nodes : null;
+}
+
 export function chooseManualPlanNodes(sections, count, options = {}) {
     if (options.signal?.aborted) {
         return Promise.resolve(null);
@@ -32,8 +44,7 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
             entries.push({ ...node, id: `node:${node.name}:${occurrence}`, stripe: index % 2 });
         });
     }
-    const names = new Map(entries.filter(node => node.name && blockPlanNode([node.name], options.blockedText)[0] !== ' ')
-        .map(node => [node.name.toLocaleLowerCase('ru'), node.name]));
+    const names = availableNames(sections, options.blockedText);
     if (names.size === 0) {
         throw new Error('В nodes.txt нет доступных нод для ручного выбора');
     }
@@ -77,10 +88,7 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         const line = dialog.querySelector('line');
         const inputs = [];
         const repeatButton = dialog.querySelector('.chance-ext-picker-repeat');
-        const previousNodes = Array.isArray(options.previousNodes)
-            && options.previousNodes.length === normalizePlanNodeCount(count)
-            && options.previousNodes.every(node => typeof node === 'string' && canonicalName(node))
-            ? options.previousNodes.map(canonicalName) : null;
+        const previousNodes = resolvePreviousPlanNodes(sections, count, options.previousNodes, options.blockedText);
         repeatButton.disabled = !previousNodes;
         repeatButton.title = previousNodes
             ? 'Вставить прошлый выбор и сразу продолжить генерацию'

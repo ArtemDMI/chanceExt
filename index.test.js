@@ -6,6 +6,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 import * as chance from './chance.js';
+import { resolvePreviousPlanNodes } from './manual-picker.js';
 import { normalizeNodePanelPosition, normalizeNodePanelSize } from './node-panel.js';
 
 const indexUrl = new URL('./index.js', import.meta.url);
@@ -22,7 +23,7 @@ test('reorganized settings preserve every control and its existing ID', () => {
     assert.deepEqual(controls.sort(), [
         'chance_ext_enabled', 'chance_ext_bonus', 'chance_ext_model', 'chance_ext_plan_injecting',
         'chance_ext_plan_source', 'chance_ext_plan_node_count', 'chance_ext_plan_blocked_node',
-        'chance_ext_plan_manual', 'chance_ext_plan_node_panel', 'chance_ext_plan_weighted',
+        'chance_ext_plan_manual', 'chance_ext_plan_node_panel', 'chance_ext_plan_action_panel', 'chance_ext_plan_weighted',
         'chance_ext_plan_flatten', 'chance_ext_plan_temperature', 'chance_ext_plan_inject_prompt',
     ].sort());
     assert.equal(html.includes('Gen nodes подбирает комбинацию'), false);
@@ -47,6 +48,7 @@ function createHarness(t, options = {}) {
     const eventSource = new EventEmitter();
     const eventTypes = Object.fromEntries([
         'CHAT_COMPLETION_PROMPT_READY', 'GENERATE_AFTER_DATA', 'GENERATION_STOPPED', 'CHAT_CHANGED',
+        'GENERATION_STARTED', 'GENERATION_ENDED',
     ].map(name => [name, name]));
     const context = {
         chat: [{ name: 'User', is_user: true, mes: 'Open the door' }],
@@ -60,12 +62,27 @@ function createHarness(t, options = {}) {
     const randomPicks = [];
     const aborts = [];
     const panels = [];
+    const actionPanels = [];
+    const hostCalls = [];
+    const pending = [];
+    let harness;
+    const hostAction = async (action, ...args) => {
+        hostCalls.push({ action, args });
+        // The host can await command/swipe processing without ever invoking the interceptor.
+        await Promise.resolve();
+        return await (options.hostAction ? options.hostAction(action, harness) : harness.run(action === 'send' ? 'normal' : 'swipe'));
+    };
+    context.swipe = { to: (...args) => hostAction('swipe', ...args) };
     const sandbox = vm.createContext({
         ...chance,
         AbortController,
         URL,
         setTimeout,
         clearTimeout,
+        queueMicrotask,
+        isGenerating: () => typeof options.isGenerating === 'function' ? options.isGenerating() : Boolean(options.isGenerating),
+        sendTextareaMessage: () => hostAction('send'),
+        resolvePreviousPlanNodes,
         console: { info() {}, log() {}, warn() {}, error() {} },
         toastr: { success() {}, warning() {}, error() {} },
         SillyTavern: { getContext: () => context },
@@ -82,6 +99,17 @@ function createHarness(t, options = {}) {
                 destroy() { this.destroyed = true; },
             };
             panels.push(panel);
+            return panel;
+        },
+        createActionPanel(panelOptions) {
+            const panel = {
+                options: panelOptions,
+                states: [],
+                destroyed: false,
+                update(state) { this.states.push(state); },
+                destroy() { this.destroyed = true; },
+            };
+            actionPanels.push(panel);
             return panel;
         },
         jQuery: callback => { assert.equal(typeof callback, 'function'); },
@@ -120,7 +148,7 @@ function createHarness(t, options = {}) {
         },
     });
     vm.runInContext(source, sandbox, { filename: indexUrl.pathname });
-    const api = vm.runInContext('({ interceptGeneration, settings, installPlanFinalizer, normalizeSettings, syncNodePanel, regeneratePanelNodes })', sandbox);
+    const api = vm.runInContext('({ interceptGeneration, settings, installPlanFinalizer, normalizeSettings, syncNodePanel, regeneratePanelNodes, syncActionPanel, runPanelAction })', sandbox);
     Object.assign(api.settings, {
         planInjecting: true,
         planSource: 'file',
@@ -136,9 +164,12 @@ function createHarness(t, options = {}) {
             pick.selection.resolve(null);
         }
         api.settings.planNodePanel = false;
+        api.settings.planActionPanel = false;
         api.syncNodePanel();
+        api.syncActionPanel();
+        for (const complete of pending) complete();
     });
-    return {
+    harness = {
         ...api,
         context,
         requests,
@@ -146,6 +177,13 @@ function createHarness(t, options = {}) {
         randomPicks,
         aborts,
         panels,
+        actionPanels,
+        hostCalls,
+        defer(value) {
+            const task = deferred();
+            pending.push(() => task.resolve(value));
+            return task;
+        },
         run(type = 'normal', chat = context.chat.map(message => ({ ...message }))) {
             return api.interceptGeneration(chat, 4096, value => aborts.push(value), type);
         },
@@ -155,6 +193,7 @@ function createHarness(t, options = {}) {
         },
         emit(name) { eventSource.emit(eventTypes[name]); },
     };
+    return harness;
 }
 
 for (const type of ['normal', 'swipe']) {
@@ -628,4 +667,298 @@ test('panel size changes are saved and supplied when the panel is reopened', t =
     h.syncNodePanel();
     assert.deepEqual(h.panels[1].options.size, { width: 600, height: 300 });
     assert.deepEqual(h.panels[1].options.position, { x: 100, y: 120 });
+});
+
+for (const action of ['send', 'swipe']) {
+    for (const mode of ['skip', 'repeat']) {
+        test(`action panel ${action}/${mode} bypasses manual selection exactly once`, { timeout: 3000 }, async t => {
+            const nodes = ['Delta', 'Alpha'];
+            const h = createHarness(t, { settings: { planManualLastNodes: nodes } });
+            h.syncActionPanel();
+            await h.actionPanels[0].options.onAction(action, mode);
+            assert.deepEqual(h.hostCalls, [{ action, args: action === 'swipe' ? [null, 'right'] : [] }]);
+            assert.equal(h.picks.length, 0);
+            assert.equal(h.randomPicks.length, 0);
+            assert.equal(h.requests.filter(request => request.url.includes('/nodes.txt?')).length, mode === 'skip' ? 0 : 1);
+            assert.equal(h.requests.filter(request => request.url === probabilityUrl).length, 1);
+            const prompt = h.finalize();
+            assert.equal(prompt.length, mode === 'skip' ? 1 : 2);
+            if (mode === 'repeat') assert.equal(prompt.at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+            assert.deepEqual(h.settings.planManualLastNodes, nodes);
+            assert.equal(h.actionPanels[0].states.at(-1).busy, false);
+
+            const normal = h.run();
+            await setImmediate();
+            assert.equal(h.picks.length, 1, 'an ordinary run must reopen the manual picker');
+            h.picks[0].selection.resolve(['Gamma', 'Beta']);
+            await normal;
+            assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Gamma]\n2. [Beta]');
+            assert.deepEqual(h.aborts, []);
+        });
+    }
+}
+
+test('action repeat prefers manual history over pinned panel nodes, including API source', async t => {
+    const h = createHarness(t, { settings: {
+        planSource: 'api', planNodePanel: true, planPanelNodes: ['Gamma', 'Beta'],
+        planManualLastNodes: ['Delta', 'Alpha'],
+    } });
+    await h.runPanelAction('send', 'repeat');
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+    assert.deepEqual(h.settings.planPanelNodes, ['Gamma', 'Beta']);
+    assert.deepEqual(h.settings.planManualLastNodes, ['Delta', 'Alpha']);
+    assert.equal(h.picks.length, 0);
+    assert.equal(h.randomPicks.length, 0);
+    await h.run();
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Gamma]\n2. [Beta]');
+});
+
+test('Send continue and nested quiet helpers keep the one-time panel choice tied to the main request', async t => {
+    for (const type of ['normal', 'continue']) {
+        const h = createHarness(t, {
+            settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+            hostAction: async (_action, harness) => {
+                await harness.run('quiet');
+                await harness.run(type);
+            },
+        });
+        await h.runPanelAction('send', 'repeat');
+        assert.equal(h.picks.length, 0);
+        assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+        assert.deepEqual(h.aborts, []);
+    }
+});
+
+test('action repeat rereads the current catalog and resolves canonical names without rewriting history', async t => {
+    let catalog = 'ALPHA = 9\n---\nDELTA = 2';
+    const saved = ['delta', 'alpha'];
+    const h = createHarness(t, {
+        settings: { planManualLastNodes: saved },
+        fileResponse: async () => ({ ok: true, text: async () => catalog }),
+    });
+    await h.runPanelAction('send', 'repeat');
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [DELTA]\n2. [ALPHA]');
+    catalog = 'Alpha = 1\n---\nDelta = 1';
+    await h.runPanelAction('swipe', 'repeat');
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+    const files = h.requests.filter(request => request.url.includes('/nodes.txt?'));
+    assert.equal(files.length, 2);
+    assert.ok(files.every(request => request.init.cache === 'no-store' && new URL(request.url).searchParams.has('t')));
+    assert.deepEqual(h.settings.planManualLastNodes, saved);
+});
+
+test('no-op Send, existing swipe and rejected hosts cannot leak a panel choice into later generation', async t => {
+    for (const action of ['send', 'swipe']) {
+        for (const reject of [false, true]) {
+            const h = createHarness(t, {
+                settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+                hostAction: async () => { if (reject) throw new Error('Host rejected'); },
+            });
+            await h.runPanelAction(action, 'repeat');
+            assert.equal(h.hostCalls.length, 1);
+            assert.equal(h.finalize().length, 1);
+            const run = h.run(action === 'send' ? 'normal' : 'swipe');
+            await setImmediate();
+            assert.equal(h.picks.length, 1);
+            h.picks[0].selection.resolve({ skipped: true });
+            await run;
+            assert.equal(h.finalize().length, 1);
+            assert.equal(h.actionPanels[0].states.at(-1).busy, false);
+        }
+    }
+});
+
+test('repeat refuses wrong counts, blocked and deleted catalog nodes without mutating saved selections', async t => {
+    for (const settings of [
+        { planNodeCount: 1 },
+        { planBlockedNode: 'Alpha' },
+        { planManualLastNodes: ['Delta', 'Deleted'] },
+    ]) {
+        const h = createHarness(t, { settings: {
+            planManualLastNodes: ['Delta', 'Alpha'], planPanelNodes: ['Gamma', 'Beta'], ...settings,
+        } });
+        const previous = [...h.settings.planManualLastNodes];
+        h.syncActionPanel();
+        await h.runPanelAction('send', 'repeat');
+        assert.equal(h.hostCalls.length, 0);
+        assert.equal(h.picks.length, 0);
+        assert.equal(h.finalize().length, 1);
+        assert.deepEqual([...h.settings.planManualLastNodes], previous);
+        assert.deepEqual(h.settings.planPanelNodes, ['Gamma', 'Beta']);
+        assert.equal(h.requests.length, settings.planManualLastNodes ? 1 : 0);
+    }
+});
+
+test('repeat preflight blocks double clicks and awaits the entire host promise', async t => {
+    let file;
+    let host;
+    const h = createHarness(t, {
+        settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+        fileResponse: () => file.promise,
+        hostAction: async (_action, harness) => { await harness.run(); await host.promise; },
+    });
+    file = h.defer({ ok: true, text: async () => catalogText });
+    host = h.defer();
+    const run = h.runPanelAction('send', 'repeat');
+    await h.runPanelAction('swipe', 'skip');
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.hostCalls.length, 0);
+    assert.equal(h.actionPanels[0].states.at(-1).busy, true);
+    file.resolve({ ok: true, text: async () => catalogText });
+    await setImmediate();
+    assert.equal(h.hostCalls.length, 1);
+    assert.equal(h.actionPanels[0].states.at(-1).busy, true);
+    await h.runPanelAction('send', 'repeat');
+    assert.equal(h.hostCalls.length, 1);
+    host.resolve();
+    await run;
+    assert.equal(h.actionPanels[0].states.at(-1).busy, false);
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+});
+
+for (const event of ['GENERATION_STOPPED', 'CHAT_CHANGED']) {
+    test(`${event} cancels repeat preflight before a late catalog can invoke the host`, async t => {
+        let file;
+        const h = createHarness(t, {
+            settings: { planManualLastNodes: ['Delta', 'Alpha'] }, fileResponse: () => file.promise,
+        });
+        file = h.defer({ ok: true, text: async () => catalogText });
+        const run = h.runPanelAction('swipe', 'repeat');
+        h.emit(event);
+        assert.equal(h.requests[0].init.signal.aborted, true);
+        file.resolve({ ok: true, text: async () => catalogText });
+        await run;
+        assert.equal(h.hostCalls.length, 0);
+        assert.equal(h.picks.length, 0);
+        assert.equal(h.finalize().length, 1);
+        assert.deepEqual(h.settings.planManualLastNodes, ['Delta', 'Alpha']);
+        assert.equal(h.actionPanels[0].states.at(-1).busy, false);
+    });
+}
+
+test('host generation state blocks actions and lifecycle events refresh panel busy state', async t => {
+    let busy = true;
+    const h = createHarness(t, {
+        isGenerating: () => busy, settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+    });
+    h.syncActionPanel();
+    assert.equal(h.actionPanels[0].states.at(-1).busy, true);
+    for (const action of ['send', 'swipe']) {
+        for (const mode of ['skip', 'repeat']) await h.runPanelAction(action, mode);
+    }
+    assert.equal(h.hostCalls.length, 0);
+    assert.equal(h.requests.length, 0);
+    busy = false;
+    h.emit('GENERATION_ENDED');
+    await setImmediate();
+    assert.equal(h.actionPanels[0].states.at(-1).busy, false);
+    busy = true;
+    h.emit('GENERATION_STARTED');
+    await setImmediate();
+    assert.equal(h.actionPanels[0].states.at(-1).busy, true);
+});
+
+test('repeat preflight rejects stale count, blocked nodes, visibility, chat and host busy state', { timeout: 3000 }, async t => {
+    for (const change of ['count', 'blocked', 'disabled', 'source', 'plan', 'chat', 'busy']) {
+        let file;
+        let busy = false;
+        const h = createHarness(t, {
+            settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+            isGenerating: () => busy,
+            fileResponse: () => file.promise,
+            hostAction: async () => {},
+        });
+        file = h.defer({ ok: true, text: async () => catalogText });
+        const run = h.runPanelAction('send', 'repeat');
+        if (change === 'count') h.settings.planNodeCount = 1;
+        if (change === 'blocked') h.settings.planBlockedNode = 'Alpha';
+        if (change === 'disabled') h.settings.planActionPanel = false;
+        if (change === 'source') h.settings.planSource = 'api';
+        if (change === 'plan') h.settings.planInjecting = false;
+        if (change === 'chat') h.context.chatId = 'another-chat';
+        if (change === 'busy') busy = true;
+        file.resolve({ ok: true, text: async () => catalogText });
+        await run;
+        assert.equal(h.hostCalls.length, 0, change);
+        assert.equal(h.finalize().length, 1, change);
+        assert.deepEqual(h.settings.planManualLastNodes, ['Delta', 'Alpha']);
+    }
+});
+
+test('repeat snapshots nodes and injection settings before host awaits probability', async t => {
+    let probability;
+    const h = createHarness(t, {
+        settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+        probabilityResponse: () => probability.promise,
+    });
+    probability = h.defer(probabilityResponse());
+    const run = h.runPanelAction('send', 'repeat');
+    await setImmediate();
+    assert.equal(h.hostCalls.length, 1);
+    h.settings.planManualLastNodes.splice(0, 2, 'Gamma', 'Beta');
+    h.settings.planPanelNodes = ['Gamma', 'Beta'];
+    h.settings.planNodeCount = 1;
+    h.settings.planBlockedNode = 'Alpha';
+    h.settings.planInjectPrompt = 'Changed {{plan}}';
+    probability.resolve(probabilityResponse());
+    await run;
+    assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+    assert.deepEqual(h.settings.planManualLastNodes, ['Gamma', 'Beta']);
+});
+
+test('action panel position and size persist, normalize and restore independently of the node panel', t => {
+    const h = createHarness(t, { settings: {
+        planActionPosition: { x: 50, y: 80 }, planActionSize: { width: 400, height: 200 },
+        planPanelPosition: { x: 10, y: 20 }, planPanelSize: { width: 300, height: 180 },
+    } });
+    h.syncActionPanel();
+    const panel = h.actionPanels[0];
+    assert.deepEqual(panel.options.position, { x: 50, y: 80 });
+    assert.deepEqual(panel.options.size, { width: 400, height: 200 });
+    panel.options.onPositionChange({ x: 100, y: 120 });
+    panel.options.onSizeChange({ width: 600, height: 300 });
+    const saved = h.context.extensionSettings.ChanceExt;
+    assert.deepEqual(saved.planActionPosition, { x: 100, y: 120 });
+    assert.deepEqual(saved.planActionSize, { width: 600, height: 300 });
+    assert.deepEqual(saved.planPanelPosition, { x: 10, y: 20 });
+    assert.deepEqual(saved.planPanelSize, { width: 300, height: 180 });
+    const normalized = h.normalizeSettings(saved);
+    assert.deepEqual(normalized.planActionPosition, saved.planActionPosition);
+    assert.deepEqual(normalized.planActionSize, saved.planActionSize);
+    assert.equal(h.normalizeSettings({}).planActionPanel, true);
+    assert.equal(h.normalizeSettings({ planActionPanel: false }).planActionPanel, false);
+    h.settings.planActionPanel = false;
+    h.syncActionPanel();
+    assert.equal(panel.destroyed, true);
+    h.settings.planActionPanel = true;
+    h.syncActionPanel();
+    assert.deepEqual(h.actionPanels[1].options.position, saved.planActionPosition);
+    assert.deepEqual(h.actionPanels[1].options.size, saved.planActionSize);
+});
+
+test('action panel visibility follows its own enable flag, file source or node panel, and plan injection', async t => {
+    const h = createHarness(t);
+    h.syncActionPanel();
+    h.syncActionPanel();
+    assert.equal(h.actionPanels.length, 1);
+    for (const settings of [
+        { planActionPanel: false },
+        { planActionPanel: true, planInjecting: false },
+        { planInjecting: true, planSource: 'api' },
+    ]) {
+        Object.assign(h.settings, settings);
+        h.syncActionPanel();
+        await h.runPanelAction('send', 'skip');
+        assert.equal(h.actionPanels[0].destroyed, true);
+        assert.equal(h.hostCalls.length, 0);
+    }
+    h.settings.planNodePanel = true;
+    h.syncActionPanel();
+    assert.equal(h.actionPanels.length, 2);
+    assert.equal(h.actionPanels[1].destroyed, false);
+    assert.equal(h.actionPanels[1].states.at(-1).canRepeat, false);
+    h.settings.planManualLastNodes = ['Delta', 'Alpha'];
+    h.syncActionPanel();
+    assert.equal(h.actionPanels[1].states.at(-1).canRepeat, true);
+    assert.equal(h.requests.length, 0);
 });

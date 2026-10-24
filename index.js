@@ -1,6 +1,7 @@
-import { getRequestHeaders } from '../../../../script.js';
-import { chooseManualPlanNodes, normalizeManualLayout } from './manual-picker.js';
+import { getRequestHeaders, isGenerating, sendTextareaMessage } from '../../../../script.js';
+import { chooseManualPlanNodes, normalizeManualLayout, resolvePreviousPlanNodes } from './manual-picker.js';
 import { createNodePanel, normalizeNodePanelPosition, normalizeNodePanelSize } from './node-panel.js';
+import { createActionPanel } from './action-panel.js';
 import {
     RANDOMIZER_SCHEMA,
     appendFailureMarker,
@@ -60,6 +61,9 @@ const DEFAULT_SETTINGS = Object.freeze({
     planPanelNodes: [],
     planPanelPosition: null,
     planPanelSize: null,
+    planActionPanel: true,
+    planActionPosition: null,
+    planActionSize: null,
     planWeighted: true,
     planWeightFlatten: 0,
     planInjectPrompt: DEFAULT_PLAN_INJECT_PROMPT,
@@ -74,6 +78,8 @@ let nodePanel = null;
 let panelRollId = 0;
 let panelRollController = null;
 let panelError = '';
+let actionPanel = null;
+let activeAction = null;
 
 function notifyError(message, error) {
     const details = error instanceof Error ? error.message : String(error ?? '');
@@ -119,6 +125,9 @@ function normalizeSettings(raw) {
             ? [...source.planPanelNodes] : [],
         planPanelPosition: normalizeNodePanelPosition(source.planPanelPosition),
         planPanelSize: normalizeNodePanelSize(source.planPanelSize),
+        planActionPanel: source.planActionPanel !== false,
+        planActionPosition: normalizeNodePanelPosition(source.planActionPosition),
+        planActionSize: normalizeNodePanelSize(source.planActionSize),
         // Digits in nodes.txt are the weights unless the switch is turned off.
         planWeighted: source.planWeighted !== false,
         planWeightFlatten: normalizePlanWeightFlatten(source.planWeightFlatten),
@@ -150,6 +159,7 @@ function updateSettingsUi() {
     $('#chance_ext_plan_source').val(settings.planSource);
     $('#chance_ext_plan_manual').prop('checked', settings.planManualSelection);
     $('#chance_ext_plan_node_panel').prop('checked', settings.planNodePanel);
+    $('#chance_ext_plan_action_panel').prop('checked', settings.planActionPanel);
     $('#chance_ext_plan_weighted').prop('checked', settings.planWeighted);
     $('#chance_ext_plan_flatten').val(settings.planWeightFlatten);
     $('#chance_ext_plan_inject_prompt').val(settings.planInjectPrompt);
@@ -197,6 +207,7 @@ function bindSettingsUi() {
     $('#chance_ext_plan_injecting').on('change', event => {
         settings.planInjecting = event.target.checked;
         saveSettings();
+        syncActionPanel();
     });
 
     $('#chance_ext_plan_temperature').on('change', event => {
@@ -210,6 +221,7 @@ function bindSettingsUi() {
         event.target.value = settings.planBlockedNode;
         saveSettings();
         syncNodePanel();
+        syncActionPanel();
     });
 
     $('#chance_ext_plan_node_count').on('change', event => {
@@ -217,12 +229,14 @@ function bindSettingsUi() {
         event.target.value = settings.planNodeCount;
         saveSettings();
         syncNodePanel();
+        syncActionPanel();
     });
 
     $('#chance_ext_plan_source').on('change', event => {
         settings.planSource = event.target.value === 'file' ? 'file' : 'api';
         saveSettings();
         syncPlanSourceRows();
+        syncActionPanel();
     });
 
     $('#chance_ext_plan_weighted').on('change', event => {
@@ -241,6 +255,13 @@ function bindSettingsUi() {
         saveSettings();
         syncPlanSourceRows();
         syncNodePanel();
+        syncActionPanel();
+    });
+
+    $('#chance_ext_plan_action_panel').on('change', event => {
+        settings.planActionPanel = event.target.checked;
+        saveSettings();
+        syncActionPanel();
     });
 
     $('#chance_ext_plan_flatten').on('change', event => {
@@ -254,6 +275,93 @@ function bindSettingsUi() {
         event.target.value = settings.planInjectPrompt;
         saveSettings();
     });
+}
+
+function actionPanelAvailable() {
+    return settings.planActionPanel && settings.planInjecting && (settings.planSource === 'file' || settings.planNodePanel);
+}
+
+function canRepeatSelection() {
+    return settings.planManualLastNodes.length === settings.planNodeCount
+        && blockPlanNode(settings.planManualLastNodes, settings.planBlockedNode).every(node => node.trim());
+}
+
+function syncActionPanel() {
+    if (!actionPanelAvailable()) {
+        actionPanel?.destroy();
+        actionPanel = null;
+        return;
+    }
+    actionPanel ??= createActionPanel({
+        position: settings.planActionPosition,
+        size: settings.planActionSize,
+        onAction: runPanelAction,
+        onPositionChange: position => {
+            settings.planActionPosition = position;
+            saveSettings();
+        },
+        onSizeChange: size => {
+            settings.planActionSize = size;
+            saveSettings();
+        },
+    });
+    actionPanel.update({ busy: Boolean(activeAction) || isGenerating(), canRepeat: canRepeatSelection() });
+}
+
+function cancelPanelAction() {
+    if (!activeAction) return;
+    activeAction.cancelled = true;
+    activeAction.choice = null;
+    activeAction.controller.abort();
+}
+
+async function runPanelAction(action, mode) {
+    if (!['send', 'swipe'].includes(action) || !['skip', 'repeat'].includes(mode)
+        || !actionPanelAvailable() || activeAction || isGenerating()) return;
+    if (mode === 'repeat' && !canRepeatSelection()) return;
+    const context = SillyTavern.getContext();
+    const operation = {
+        action, chatId: context.chatId, controller: new AbortController(), cancelled: false, choice: null,
+    };
+    const planSettings = { ...settings };
+    const previousNodes = [...settings.planManualLastNodes];
+    activeAction = operation;
+    syncActionPanel();
+    try {
+        let nodes = null;
+        if (mode === 'repeat') {
+            const url = new URL('./nodes.txt', import.meta.url);
+            url.searchParams.set('t', Date.now().toString());
+            const response = await fetch(url, { cache: 'no-store', signal: operation.controller.signal });
+            if (!response.ok) throw new Error(`nodes.txt: HTTP ${response.status}`);
+            nodes = resolvePreviousPlanNodes(parseNodeCatalog(await response.text()), planSettings.planNodeCount,
+                previousNodes, planSettings.planBlockedNode);
+            if (!nodes) throw new Error('Прошлый выбор больше не соответствует каталогу или запрещённым нодам');
+        }
+        if (operation.cancelled || operation.chatId !== SillyTavern.getContext().chatId || isGenerating()
+            || !actionPanelAvailable() || settings.planNodeCount !== planSettings.planNodeCount
+            || settings.planBlockedNode !== planSettings.planBlockedNode) return;
+        operation.choice = { mode, nodes, planSettings };
+        // Await the host action itself: it may switch an existing swipe or process a command without generating.
+        if (action === 'send') await sendTextareaMessage();
+        else await context.swipe.to(null, 'right');
+    } catch (error) {
+        if (!operation.cancelled) notifyError('Не удалось выполнить действие панели', error);
+    } finally {
+        if (activeAction === operation) activeAction = null;
+        syncActionPanel();
+    }
+}
+
+function takePanelChoice(type) {
+    const operation = activeAction;
+    if (!operation?.choice || operation.cancelled || operation.chatId !== SillyTavern.getContext().chatId) return null;
+    const expected = operation.action === 'swipe' ? ['swipe'] : ['normal', 'continue'];
+    if (!expected.includes(String(type || 'normal').toLowerCase())) return null;
+    const choice = operation.choice;
+    // Consume once; nested helpers and later clicks must fall back to their ordinary settings.
+    operation.choice = null;
+    return choice;
 }
 
 function syncNodePanel() {
@@ -504,6 +612,7 @@ async function requestFilePlanNodes(requestId, controller) {
         if (manual) {
             settings.planManualLastNodes = [...nodes];
             saveSettings();
+            syncActionPanel();
         }
         console.info(`[${EXTENSION_NAME}] Цепочка из файла`, { requestId, nodes });
         toastr.success(nodes.join(' | '), 'Ноды из файла', {
@@ -602,7 +711,7 @@ async function probePlanApi(requestId) {
     }
 }
 
-function startPlanRequest(type) {
+function startPlanRequest(type, panelChoice = null) {
     // A new click gets its own POST. The API will not cancel or replace the previous one.
     const requestId = planRequests.begin();
     const cancel = new AbortController();
@@ -613,6 +722,13 @@ function startPlanRequest(type) {
             planController.abort();
         }
     });
+    if (panelChoice) {
+        return {
+            requestId, cancel, unsubscribe, planSettings: panelChoice.planSettings,
+            ready: Promise.resolve('file'),
+            task: Promise.resolve(panelChoice.mode === 'skip' ? { skipped: true } : [...panelChoice.nodes]),
+        };
+    }
     if (settings.planNodePanel) {
         const nodes = settings.planPanelNodes.slice(0, settings.planNodeCount);
         const valid = nodes.length === settings.planNodeCount
@@ -704,13 +820,19 @@ function installPlanFinalizer() {
         pendingPlanLine = null;
     });
     context.eventSource.on(context.eventTypes.GENERATION_STOPPED, () => {
+        cancelPanelAction();
         pendingPlanLine = null;
         planRequests.begin();
     });
     context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => {
+        cancelPanelAction();
         pendingPlanLine = null;
         planRequests.begin();
+        syncActionPanel();
     });
+    for (const event of [context.eventTypes.GENERATION_STARTED, context.eventTypes.GENERATION_ENDED]) {
+        context.eventSource.on(event, () => queueMicrotask(syncActionPanel));
+    }
 }
 
 function getExpectedMessageId(type) {
@@ -837,6 +959,8 @@ function installResultUi() {
 }
 
 async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
+    syncActionPanel();
+    const panelChoice = takePanelChoice(type);
     const runPlan = settings.planInjecting && shouldRequestPlan(type);
     const runChance = settings.enabled && Boolean(settings.model) && shouldProcessGeneration(type);
     if (!runPlan && !runChance) {
@@ -844,7 +968,7 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
     }
 
     // Snapshot the dialogue before the dice marker is merged, then inject the plan last.
-    const planRun = runPlan ? startPlanRequest(type) : null;
+    const planRun = runPlan ? startPlanRequest(type, panelChoice) : null;
 
     try {
         if (planRun) {
@@ -959,6 +1083,7 @@ jQuery(async () => {
         installResultUi();
         installPlanFinalizer();
         syncNodePanel();
+        syncActionPanel();
         console.log(`[${EXTENSION_NAME}] Ready`);
     } catch (error) {
         notifyError('Ошибка запуска расширения', error);

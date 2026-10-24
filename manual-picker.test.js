@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chooseManualPlanNodes, normalizeManualLayout } from './manual-picker.js';
+import { chooseManualPlanNodes, normalizeManualLayout, resolvePreviousPlanNodes } from './manual-picker.js';
 
 test('manual layout supplies safe defaults for missing or invalid settings', () => {
     const defaults = { columns: 6, fontSize: 13, width: 1200, height: 800, order: [] };
@@ -36,4 +36,16 @@ test('an already cancelled picker never opens a window', async () => {
 test('an empty or entirely blocked catalog cannot silently start manual generation', () => {
     assert.throws(() => chooseManualPlanNodes([], 3), /нет доступных нод/);
     assert.throws(() => chooseManualPlanNodes([[{ name: 'Alpha', weight: 1 }]], 1, { blockedText: 'alpha' }), /нет доступных нод/);
+});
+
+test('repeat resolves the saved order against the current catalog without truncating or mutating it', () => {
+    const catalog = [[{ name: 'Alpha', weight: 1 }], [{ name: 'Beta', weight: 3 }]];
+    const saved = ['beta', ' ALPHA ', 'beta'];
+    assert.deepEqual(resolvePreviousPlanNodes(catalog, 3, saved), ['Beta', 'Alpha', 'Beta']);
+    assert.deepEqual(saved, ['beta', ' ALPHA ', 'beta']);
+    assert.equal(resolvePreviousPlanNodes(catalog, 2, saved), null);
+    assert.equal(resolvePreviousPlanNodes(catalog, 3, saved, 'alpha'), null);
+    assert.equal(resolvePreviousPlanNodes(catalog, 1, ['Missing']), null);
+    assert.equal(resolvePreviousPlanNodes(catalog, 1, [null]), null);
+    assert.equal(resolvePreviousPlanNodes(catalog, 1, null), null);
 });
