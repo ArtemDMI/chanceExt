@@ -493,6 +493,10 @@ async function requestFilePlanNodes(requestId, controller) {
         if (!planRequests.isCurrent(requestId)) {
             return null;
         }
+        // Skipping completes this choice without replacing the saved selection or treating it as a cancellation.
+        if (nodes?.skipped) {
+            return nodes;
+        }
         if (nodes.length === 0) {
             notifyPlanSkipped('В nodes.txt нет нод для цепочки');
             return manual ? { cancelled: true } : null;
@@ -934,7 +938,7 @@ async function interceptGeneration(chat, _contextSize, abortGeneration, type) {
                     }
                     stopGeneration(abortGeneration);
                 } else if (planRequests.isCurrent(planRun.requestId)) {
-                    queuePlanForEnd(nodes, planRun.planSettings);
+                    queuePlanForEnd(nodes?.skipped ? null : nodes, planRun.planSettings);
                 } else {
                     // The API answers every POST. This body belongs to the click that sent it, not the newer one.
                     console.info(`[${EXTENSION_NAME}] План ${planRun.requestId} отброшен: уже есть более новый запрос`);

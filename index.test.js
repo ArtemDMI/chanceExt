@@ -228,6 +228,36 @@ test('cancelled manual selection aborts generation without starting probability'
     assert.equal(h.finalize().length, 1);
 });
 
+for (const type of ['normal', 'swipe']) {
+    test(`skipping manual ${type} continues without any plan injection or overwriting the previous selection`, async t => {
+        const previousNodes = ['Delta', 'Alpha'];
+        const h = createHarness(t, { settings: { planManualLastNodes: previousNodes } });
+        const chat = structuredClone(h.context.chat);
+        const run = h.run(type, chat);
+        await setImmediate();
+        h.picks[0].selection.resolve({ skipped: true });
+        await run;
+        assert.deepEqual(h.aborts, []);
+        assert.equal(h.requests.length, 2, 'the normal probability check still runs');
+        assert.equal(h.randomPicks.length, 0);
+        assert.deepEqual(chat, h.context.chat);
+        assert.deepEqual(h.settings.planManualLastNodes, previousNodes);
+        const prompt = [{ role: 'user', content: 'Original prompt' }];
+        assert.deepEqual(h.finalize(prompt), [{ role: 'user', content: 'Original prompt' }]);
+    });
+}
+
+test('skipping with probability disabled still permits the original prompt without a plan', async t => {
+    const h = createHarness(t, { settings: { enabled: false } });
+    const run = h.run();
+    await setImmediate();
+    h.picks[0].selection.resolve({ skipped: true });
+    await run;
+    assert.deepEqual(h.aborts, []);
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.finalize().length, 1);
+});
+
 test('completed manual selection is saved and supplied unchanged to the next picker', async t => {
     const h = createHarness(t);
     const run = h.run();

@@ -277,7 +277,8 @@
     flex-shrink: 0;
 }
 
-.chance-ext-picker-repeat {
+.chance-ext-picker-repeat,
+.chance-ext-picker-skip {
     flex-shrink: 0;
     height: 20px;
     padding: 0 6px;
@@ -290,6 +291,15 @@
 
 .chance-ext-picker-repeat:hover:not(:disabled) {
     background: #c53243;
+}
+
+.chance-ext-picker-skip {
+    border-color: #53b77a;
+    background: #267345;
+}
+
+.chance-ext-picker-skip:hover {
+    background: #318d56;
 }
 
 .chance-ext-picker-repeat:disabled {
@@ -540,6 +550,14 @@
 }
 
 @media (max-width: 600px) {
+    .chance-ext-picker-slots-row {
+        flex-wrap: wrap;
+    }
+
+    .chance-ext-picker-slots {
+        flex-basis: calc(100% - 130px);
+    }
+
     .chance-ext-picker {
         resize: none;
     }

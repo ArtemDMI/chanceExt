@@ -55,6 +55,7 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
             <div class="chance-ext-picker-slots-row">
                 <div class="chance-ext-picker-slots"></div>
                 <button type="button" class="chance-ext-picker-repeat">Повтор</button>
+                <button type="button" class="chance-ext-picker-skip" title="Продолжить без нод и инструкции плана">Пропуск</button>
                 <div class="chance-ext-picker-size-controls">
                     <label>Колонки <input class="chance-ext-picker-columns" type="number" min="1" max="15"></label>
                     <label>Шрифт <input class="chance-ext-picker-font" type="number" min="10" max="22"></label>
@@ -118,6 +119,7 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
             else resolve(nodes);
         };
         const onAbort = () => finish(null);
+        dialog.querySelector('.chance-ext-picker-skip').addEventListener('click', () => finish({ skipped: true }));
 
         function paintLink() {
             line.style.display = 'none';
