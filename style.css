@@ -517,21 +517,10 @@
     position: relative;
 }
 
-.chance-ext-picker-grip {
-    width: 12px;
-    flex-shrink: 0;
-    color: #667286;
-    text-align: center;
-    cursor: grab;
-    user-select: none;
-    touch-action: none;
-    overflow: hidden;
-    line-height: 1;
-    align-self: center;
-}
-
 .chance-ext-picker-node {
-    --heat-fade: #12141a;
+    --category-hue: 0;
+    --category-saturation: 0%;
+    --category-lightness: 12%;
     position: relative;
     display: flex;
     align-items: center;
@@ -540,25 +529,21 @@
     min-height: 0;
     border: 0;
     border-radius: 3px;
-    background: var(--heat-fade);
+    background: hsl(var(--category-hue) var(--category-saturation) var(--category-lightness));
+    color: #ddd;
     padding: 0 3px;
     text-align: left;
     font-size: var(--picker-font) !important;
     line-height: 1 !important;
 }
 
-.chance-ext-picker-node.is-stripe {
-    --heat-fade: #0e1015;
-}
-
-.chance-ext-picker-node::before {
-    content: '';
-    position: absolute;
-    inset: 0 0 0 auto;
-    width: calc(var(--heat-fill) * 100%);
-    background: linear-gradient(to right, var(--heat-fade), #172947 50%);
-    pointer-events: none;
-}
+.chance-ext-picker-node[data-color="red"] { --category-hue: 0; --category-saturation: 32%; }
+.chance-ext-picker-node[data-color="yellow"] { --category-hue: 52; --category-saturation: 32%; }
+.chance-ext-picker-node[data-color="green"] { --category-hue: 130; --category-saturation: 32%; }
+.chance-ext-picker-node[data-color="purple"] { --category-hue: 275; --category-saturation: 32%; }
+.chance-ext-picker-node[data-color="pink"] { --category-hue: 330; --category-saturation: 32%; }
+.chance-ext-picker-node[data-color="cyan"] { --category-hue: 185; --category-saturation: 32%; }
+.chance-ext-picker-node[data-color="orange"] { --category-hue: 28; --category-saturation: 32%; }
 
 .chance-ext-picker-node-label {
     position: relative;
@@ -568,16 +553,11 @@
 }
 
 .chance-ext-picker-node:hover:not(:disabled) {
-    background: #205138;
-}
-
-.chance-ext-picker-node:hover::before,
-.chance-ext-picker-node.is-used::before {
-    display: none;
+    --category-lightness: 16%;
 }
 
 .chance-ext-picker-node.is-used {
-    background: color-mix(in srgb, var(--node-color) 42%, black);
+    box-shadow: inset 0 0 0 1px var(--node-color);
 }
 
 .chance-ext-picker-node.is-active {
@@ -611,16 +591,6 @@
 
 .chance-ext-picker-separator {
     background: #000;
-}
-
-.chance-ext-picker-separator .chance-ext-picker-grip {
-    width: 100%;
-    height: 100%;
-    font-size: 0;
-}
-
-.chance-ext-picker .is-drop-target {
-    box-shadow: inset 0 2px 0 #7ec8ff;
 }
 
 .chance-ext-picker-links {

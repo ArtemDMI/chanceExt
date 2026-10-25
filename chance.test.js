@@ -269,6 +269,42 @@ test('takes one node from each section and can reuse a section on the next call'
     assert.deepEqual(pickRandomPlanNodes(only, 1, { weighted: false, random: () => 0 }), ['одна']);
 });
 
+test('reads color tags without leaking metadata into node names', () => {
+    const colors = ['red', 'yellow', 'green', 'purple', 'pink', 'cyan', 'orange', 'gray'];
+    const catalog = parseNodeCatalog([
+        'разговор <red>',
+        'описание сцены 2-6 предложения = <yellow>',
+        '---',
+        ...colors.map(color => `${color} node <${color}>`),
+        'invalid <blue>',
+        'empty = <gray>',
+    ].join('\n'));
+    assert.deepEqual(catalog[0], [
+        { name: 'разговор', weight: 1, color: 'red' },
+        { name: 'описание сцены 2-6 предложения', weight: 1, color: 'yellow' },
+    ]);
+    assert.deepEqual(catalog[1].map(node => node.color), [...colors, 'gray']);
+    assert.equal(catalog[1].at(-1).name, 'empty');
+    const picked = pickRandomPlanNodes(catalog, 2, { weighted: true, random: () => 0 });
+    assert.equal(picked.some(name => /[<>]/.test(name)), false);
+    assert.equal(picked.length, 2);
+});
+
+test('keeps the first occurrence and section order when duplicate names have different metadata', () => {
+    assert.deepEqual(parseNodeCatalog([
+        ' Alpha   node <green>',
+        'Alpha node = 99',
+        '---',
+        'alpha node <pink>',
+        'Beta <gray>',
+        '---',
+        'Beta <red>',
+    ].join('\n')), [
+        [{ name: 'Alpha node', weight: 1, color: 'green' }],
+        [{ name: 'Beta', weight: 1, color: 'gray' }],
+    ]);
+});
+
 test('uses the digit as weight only when that switch is on', () => {
     const section = [[{ name: 'редко', weight: 1 }, { name: 'часто', weight: 99 }]];
     assert.deepEqual(
@@ -334,4 +370,22 @@ test('nodes.txt is split into sections of real nodes', () => {
     const chain = pickRandomPlanNodes(sections, 4, { weighted: true, blockedText: blockedName });
     assert.equal(chain.length, 4);
     assert.equal(chain.includes(blockedName), false);
+});
+
+test('nodes.txt has a color on every node, no popularity counts and no duplicate names', () => {
+    const text = readFileSync(new URL('./nodes.txt', import.meta.url), 'utf8');
+    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line && !/^---+$/.test(line));
+    const names = new Set();
+    for (const line of lines) {
+        assert.match(line, /^.+\s<(red|yellow|green|purple|pink|cyan|orange|gray)>$/);
+        assert.doesNotMatch(line, /\s=\s*\d+(?:\s|$)/);
+        const name = line.replace(/\s*<[^>]+>$/, '').replace(/\s+/g, ' ').toLocaleLowerCase('ru');
+        assert.equal(names.has(name), false, `Duplicate node: ${name}`);
+        names.add(name);
+    }
+    const nodes = parseNodeCatalog(text).flat();
+    assert.equal(nodes.length, lines.length);
+    assert.deepEqual(nodes.slice(0, 2).map(node => [node.name, node.color]), [
+        ['разговор', 'red'], ['описание сцены 2-6 предложения', 'yellow'],
+    ]);
 });

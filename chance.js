@@ -477,13 +477,13 @@ export function blockPlanNode(nodes, blockedText) {
 export function parseNodeCatalog(text) {
     const sections = [];
     let current = [];
+    const seen = new Set();
 
     for (const rawLine of String(text ?? '').split(/\r?\n/)) {
         const line = rawLine.trim();
         if (!line) {
             continue;
         }
-        // A dash line only splits sections. It is not a node, and neither is any line without " = N".
         if (/^---+$/.test(line)) {
             if (current.length > 0) {
                 sections.push(current);
@@ -491,16 +491,20 @@ export function parseNodeCatalog(text) {
             }
             continue;
         }
-        const match = /^(.*)\s=\s(\d+)$/.exec(line);
+        const tagged = /^(.*?)\s*(?:=\s*)?<(red|yellow|green|purple|pink|cyan|orange|gray)>$/.exec(line);
+        // Older user catalogs may still supply numeric weights for random selection.
+        const match = tagged ?? /^(.*)\s=\s(\d+)$/.exec(line);
         if (!match) {
             continue;
         }
         const name = normalizeText(match[1]);
-        const weight = Number(match[2]);
-        if (!name || !Number.isInteger(weight)) {
+        const weight = tagged ? 1 : Number(match[2]);
+        const key = planNodeKey(name);
+        if (!name || !Number.isInteger(weight) || seen.has(key)) {
             continue;
         }
-        current.push({ name, weight });
+        seen.add(key);
+        current.push(tagged ? { name, weight, color: tagged[2] } : { name, weight });
     }
 
     if (current.length > 0) {

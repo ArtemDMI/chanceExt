@@ -45,18 +45,16 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         if (sectionIndex > 0) {
             entries.push({ id: `separator:${sectionIndex}`, separator: true });
         }
-        section.forEach((node, index) => {
+        section.forEach(node => {
             const occurrence = occurrences.get(node.name) ?? 0;
             occurrences.set(node.name, occurrence + 1);
-            entries.push({ ...node, id: `node:${node.name}:${occurrence}`, stripe: index % 2 });
+            entries.push({ ...node, id: `node:${node.name}:${occurrence}` });
         });
     }
     const names = availableNames(sections, options.blockedText);
-    const byId = new Map(entries.map(entry => [entry.id, entry]));
-    let ordered = layout.order.filter(id => byId.has(id)).map(id => byId.get(id));
-    const known = new Set(ordered.map(entry => entry.id));
-    ordered.push(...entries.filter(entry => !known.has(entry.id)));
-    const totalWeight = entries.reduce((total, node) => total + (node.weight || 0), 0);
+    // The file is authoritative, including when an older layout has a saved drag order.
+    const ordered = entries;
+    layout.order = [];
     const canonicalName = value => resolveNodeText(value, names, options.blockedText);
     const color = index => `hsl(${118 - 70 * index / Math.max(1, normalizePlanNodeCount(count) - 1)} 46% 56%)`;
 
@@ -106,14 +104,10 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         let settled = false;
         let frame;
         let observer;
-        let dragged = null;
-        let dropTarget = null;
-        let dropAfter = false;
         let slotDragIndex = null;
         const previousFocus = document.activeElement;
 
         const saveLayout = () => {
-            layout.order = ordered.map(entry => entry.id);
             options.onLayoutChange?.({ ...layout, order: [...layout.order] });
         };
         const finish = (nodes, error) => {
@@ -206,22 +200,15 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
                 row.className = node.separator ? 'chance-ext-picker-separator' : 'chance-ext-picker-item';
                 row.dataset.id = node.id;
                 row.style.height = `${itemHeight}px`;
-                const grip = document.createElement('span');
-                grip.className = 'chance-ext-picker-grip';
-                grip.textContent = '⋮';
-                grip.title = 'Перетащить для изменения порядка';
-                grip.setAttribute('aria-label', grip.title);
-                row.appendChild(grip);
                 if (!node.separator) {
                     const button = document.createElement('button');
                     button.type = 'button';
-                    button.className = `chance-ext-picker-node${node.stripe ? ' is-stripe' : ''}`;
+                    button.className = 'chance-ext-picker-node';
                     button.dataset.name = node.name;
+                    button.dataset.color = node.color ?? 'gray';
                     button.setAttribute('aria-label', node.name);
                     button.disabled = !names.has(node.name.toLocaleLowerCase('ru'));
-                    button.title = `${node.name} (${node.weight})${button.disabled ? ' - запрещена' : ''}`;
-                    // Match manual-sort's nonlinear scale so rare nodes still have a visible frequency bar.
-                    button.style.setProperty('--heat-fill', totalWeight ? Math.min(1, 3.64 * (node.weight / totalWeight) ** 0.75) : 0);
+                    button.title = `${node.name}${button.disabled ? ' - запрещена' : ''}`;
                     const label = document.createElement('span');
                     label.className = 'chance-ext-picker-node-label';
                     label.textContent = node.name;
@@ -328,40 +315,6 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
             catalog.scrollLeft += event.deltaY;
         }, { passive: false });
 
-        catalog.addEventListener('pointerdown', event => {
-            const grip = event.target.closest('.chance-ext-picker-grip');
-            if (!grip || event.button !== 0) return;
-            dragged = grip.parentElement.dataset.id;
-            grip.setPointerCapture(event.pointerId);
-            event.preventDefault();
-        });
-        catalog.addEventListener('pointermove', event => {
-            if (!dragged) return;
-            catalog.querySelector('.is-drop-target')?.classList.remove('is-drop-target');
-            const row = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-id]');
-            dropTarget = row && catalog.contains(row) ? row.dataset.id : null;
-            dropAfter = row ? event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2 : false;
-            row?.classList.add('is-drop-target');
-            const bounds = catalog.getBoundingClientRect();
-            if (event.clientX > bounds.right - 30) catalog.scrollLeft += 20;
-            if (event.clientX < bounds.left + 30) catalog.scrollLeft -= 20;
-        });
-        catalog.addEventListener('pointerup', () => {
-            if (!dragged) return;
-            if (dragged && dropTarget && dragged !== dropTarget) {
-                const moved = ordered.find(entry => entry.id === dragged);
-                ordered = ordered.filter(entry => entry.id !== dragged);
-                const index = ordered.findIndex(entry => entry.id === dropTarget) + Number(dropAfter);
-                ordered.splice(index, 0, moved);
-                saveLayout();
-            }
-            dragged = dropTarget = null;
-            renderCatalog();
-        });
-        catalog.addEventListener('pointercancel', () => {
-            dragged = dropTarget = null;
-            catalog.querySelector('.is-drop-target')?.classList.remove('is-drop-target');
-        });
         dialog.querySelector('.chance-ext-picker-close').addEventListener('click', () => finish(null));
         dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
         dialog.addEventListener('close', () => finish(null));
