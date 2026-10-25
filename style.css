@@ -520,7 +520,7 @@
 .chance-ext-picker-node {
     --category-hue: 0;
     --category-saturation: 0%;
-    --category-lightness: 12%;
+    --category-lightness: 5.5%;
     position: relative;
     display: flex;
     align-items: center;
@@ -553,7 +553,7 @@
 }
 
 .chance-ext-picker-node:hover:not(:disabled) {
-    --category-lightness: 16%;
+    --category-lightness: 6%;
 }
 
 .chance-ext-picker-node.is-used {
