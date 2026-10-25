@@ -255,7 +255,7 @@
 
 .chance-ext-send-actions button svg {
     /* Scale only the glyph so the send controls keep their existing layout footprint. */
-    transform: scale(1.3);
+    transform: scale(1.56);
 }
 
 .chance-ext-actions button:focus-visible {
