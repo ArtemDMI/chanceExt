@@ -523,9 +523,6 @@
 }
 
 .chance-ext-picker-node {
-    --category-hue: 0;
-    --category-saturation: 0%;
-    --category-lightness: 5.5%;
     position: relative;
     display: flex;
     align-items: center;
@@ -534,7 +531,7 @@
     min-height: 0;
     border: 0;
     border-radius: 3px;
-    background: hsl(var(--category-hue) var(--category-saturation) var(--category-lightness));
+    background: #12141a;
     color: #ddd;
     padding: 0 3px;
     text-align: left;
@@ -542,13 +539,9 @@
     line-height: 1 !important;
 }
 
-.chance-ext-picker-node[data-color="red"] { --category-hue: 0; --category-saturation: 32%; }
-.chance-ext-picker-node[data-color="yellow"] { --category-hue: 52; --category-saturation: 32%; }
-.chance-ext-picker-node[data-color="green"] { --category-hue: 130; --category-saturation: 32%; }
-.chance-ext-picker-node[data-color="purple"] { --category-hue: 275; --category-saturation: 32%; }
-.chance-ext-picker-node[data-color="pink"] { --category-hue: 330; --category-saturation: 32%; }
-.chance-ext-picker-node[data-color="cyan"] { --category-hue: 185; --category-saturation: 32%; }
-.chance-ext-picker-node[data-color="orange"] { --category-hue: 28; --category-saturation: 32%; }
+.chance-ext-picker-node.is-stripe {
+    background: #0e1015;
+}
 
 .chance-ext-picker-node-label {
     position: relative;
@@ -558,7 +551,7 @@
 }
 
 .chance-ext-picker-node:hover:not(:disabled) {
-    --category-lightness: 6%;
+    background: #191c24;
 }
 
 .chance-ext-picker-node.is-used {

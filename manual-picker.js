@@ -45,10 +45,10 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         if (sectionIndex > 0) {
             entries.push({ id: `separator:${sectionIndex}`, separator: true });
         }
-        section.forEach(node => {
+        section.forEach((node, index) => {
             const occurrence = occurrences.get(node.name) ?? 0;
             occurrences.set(node.name, occurrence + 1);
-            entries.push({ ...node, id: `node:${node.name}:${occurrence}` });
+            entries.push({ ...node, id: `node:${node.name}:${occurrence}`, stripe: index % 2 });
         });
     }
     const names = availableNames(sections, options.blockedText);
@@ -203,9 +203,8 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
                 if (!node.separator) {
                     const button = document.createElement('button');
                     button.type = 'button';
-                    button.className = 'chance-ext-picker-node';
+                    button.className = `chance-ext-picker-node${node.stripe ? ' is-stripe' : ''}`;
                     button.dataset.name = node.name;
-                    button.dataset.color = node.color ?? 'gray';
                     button.setAttribute('aria-label', node.name);
                     button.disabled = !names.has(node.name.toLocaleLowerCase('ru'));
                     button.title = `${node.name}${button.disabled ? ' - запрещена' : ''}`;

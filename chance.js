@@ -491,20 +491,16 @@ export function parseNodeCatalog(text) {
             }
             continue;
         }
-        const tagged = /^(.*?)\s*(?:=\s*)?<(red|yellow|green|purple|pink|cyan|orange|gray)>$/.exec(line);
         // Older user catalogs may still supply numeric weights for random selection.
-        const match = tagged ?? /^(.*)\s=\s(\d+)$/.exec(line);
-        if (!match) {
-            continue;
-        }
-        const name = normalizeText(match[1]);
-        const weight = tagged ? 1 : Number(match[2]);
+        const match = /^(.*)\s=\s(\d+)$/.exec(line);
+        const name = normalizeText(match ? match[1] : line);
+        const weight = match ? Number(match[2]) : 1;
         const key = planNodeKey(name);
         if (!name || !Number.isInteger(weight) || seen.has(key)) {
             continue;
         }
         seen.add(key);
-        current.push(tagged ? { name, weight, color: tagged[2] } : { name, weight });
+        current.push({ name, weight });
     }
 
     if (current.length > 0) {
