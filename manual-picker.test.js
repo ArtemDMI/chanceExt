@@ -45,6 +45,69 @@ test('repeat resolves the saved order against the current catalog without trunca
     assert.equal(resolvePreviousPlanNodes(catalog, 1, null), null);
 });
 
+test('send button submits only filled slots and stays disabled for an empty selection', async t => {
+    class Element {
+        constructor() {
+            this.value = '';
+            this.style = { setProperty() {} };
+            this.classList = { toggle() {} };
+            this.listeners = new Map();
+            this.children = [];
+        }
+        setAttribute() {}
+        append(...elements) { this.children.push(...elements); }
+        appendChild(element) { this.append(element); }
+        replaceChildren(...elements) { this.children = elements; }
+        addEventListener(type, listener) { this.listeners.set(type, listener); }
+        querySelector(selector) {
+            if (!this.selectors) this.selectors = new Map();
+            if (!this.selectors.has(selector)) this.selectors.set(selector, new Element());
+            return this.selectors.get(selector);
+        }
+        querySelectorAll() { return []; }
+        focus() {}
+        showModal() {}
+        close() {}
+        remove() {}
+        fire(type) { this.listeners.get(type)?.({}); }
+    }
+    let dialog;
+    const originalCancel = Object.getOwnPropertyDescriptor(globalThis, 'cancelAnimationFrame');
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const originalObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+    t.after(() => {
+        if (originalCancel) Object.defineProperty(globalThis, 'cancelAnimationFrame', originalCancel);
+        else delete globalThis.cancelAnimationFrame;
+        if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+        else delete globalThis.document;
+        if (originalObserver) Object.defineProperty(globalThis, 'ResizeObserver', originalObserver);
+        else delete globalThis.ResizeObserver;
+    });
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.document = {
+        body: new Element(),
+        createElement: tag => {
+            const element = new Element();
+            if (tag === 'dialog') dialog = element;
+            return element;
+        },
+        createDocumentFragment: () => new Element(),
+    };
+    globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+    const pending = chooseManualPlanNodes([], 10);
+    const button = dialog.querySelector('.chance-ext-picker-send');
+    const slots = dialog.querySelector('.chance-ext-picker-slots').children;
+    assert.equal(button.disabled, true);
+    button.fire('click');
+    slots[0].children[1].value = '  First event  ';
+    slots[4].children[1].value = 'Second event';
+    slots[8].children[1].value = '   ';
+    slots[0].children[1].fire('input');
+    assert.equal(button.disabled, false);
+    button.fire('click');
+    assert.deepEqual(await pending, ['First event', 'Second event']);
+});
+
 test('freeform nodes can contain any number of words and do not require a catalog', () => {
     const custom = 'A completely custom event with many words '.repeat(100).trim();
     assert.deepEqual(resolvePreviousPlanNodes([], 2, [`  ${custom}  `, 'Another event']), [custom, 'Another event']);

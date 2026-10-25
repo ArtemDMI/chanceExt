@@ -259,6 +259,23 @@ for (const type of ['normal', 'swipe']) {
     });
 }
 
+for (const nodes of [['Delta'], ['Delta', 'Alpha'], ['Delta', 'Alpha', 'Beta']]) {
+    test(`manual selection sends ${nodes.length} nodes with ten slots configured`, async t => {
+        const h = createHarness(t, { settings: { planNodeCount: 10 } });
+        const run = h.run();
+        await setImmediate();
+        assert.equal(h.picks[0].count, 10);
+        h.picks[0].selection.resolve(nodes);
+        await run;
+        assert.deepEqual(h.aborts, []);
+        assert.deepEqual([...h.settings.planManualLastNodes], nodes);
+        assert.deepEqual(h.finalize(), [
+            { role: 'system', content: 'Last host prompt' },
+            { role: 'user', content: `Plan:\n${nodes.map((node, index) => `${index + 1}. [${node}]`).join('\n')}` },
+        ]);
+    });
+}
+
 test('cancelled manual selection aborts generation without starting probability', { timeout: 3000 }, async t => {
     const h = createHarness(t);
     const run = h.run();

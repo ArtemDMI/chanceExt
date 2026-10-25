@@ -67,6 +67,7 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         dialog.innerHTML = `
             <div class="chance-ext-picker-slots-row">
                 <div class="chance-ext-picker-slots"></div>
+                <button type="button" class="chance-ext-picker-send" title="Отправить выбранные ноды без пустых ячеек" disabled>Отправить</button>
                 <button type="button" class="chance-ext-picker-repeat">Повтор</button>
                 <button type="button" class="chance-ext-picker-skip" title="Продолжить без нод и инструкции плана">Пропуск</button>
                 <div class="chance-ext-picker-size-controls">
@@ -89,6 +90,7 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         const search = dialog.querySelector('.chance-ext-picker-search');
         const line = dialog.querySelector('line');
         const inputs = [];
+        const sendButton = dialog.querySelector('.chance-ext-picker-send');
         const repeatButton = dialog.querySelector('.chance-ext-picker-repeat');
         const previousNodes = resolvePreviousPlanNodes(sections, count, options.previousNodes, options.blockedText);
         repeatButton.disabled = !previousNodes;
@@ -125,6 +127,10 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
             else resolve(nodes);
         };
         const onAbort = () => finish(null);
+        sendButton.addEventListener('click', () => {
+            const nodes = inputs.map(input => canonicalName(input.value)).filter(Boolean);
+            if (nodes.length) finish(nodes);
+        });
         dialog.querySelector('.chance-ext-picker-skip').addEventListener('click', () => finish({ skipped: true }));
 
         function paintLink() {
@@ -149,6 +155,7 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
 
         function paintSelection() {
             const selected = inputs.map(input => canonicalName(input.value));
+            sendButton.disabled = !selected.some(Boolean);
             inputs.forEach((input, index) => {
                 input.classList.toggle('is-filled', Boolean(selected[index]));
                 input.classList.toggle('is-invalid', Boolean(input.value) && !selected[index]);

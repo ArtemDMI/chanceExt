@@ -371,6 +371,7 @@
     flex-shrink: 0;
 }
 
+.chance-ext-picker-send,
 .chance-ext-picker-repeat,
 .chance-ext-picker-skip {
     flex-shrink: 0;
@@ -387,6 +388,15 @@
     background: #c53243;
 }
 
+.chance-ext-picker-send {
+    border-color: #ae7cdb;
+    background: #7540a5;
+}
+
+.chance-ext-picker-send:hover:not(:disabled) {
+    background: #9053c5;
+}
+
 .chance-ext-picker-skip {
     border-color: #53b77a;
     background: #267345;
@@ -396,6 +406,7 @@
     background: #318d56;
 }
 
+.chance-ext-picker-send:disabled,
 .chance-ext-picker-repeat:disabled {
     opacity: 0.45;
     cursor: not-allowed;
