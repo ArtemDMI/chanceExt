@@ -1,5 +1,6 @@
 export function createActionPanel({ onAction }) {
-    const sendIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M22 2 15 22l-4-9-9-4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m22 2-11 11" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+    const skipIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 4 11 8-11 8Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M19 4v16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    const repeatIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const swipeIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 4 8 8-8 8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const groups = ['send', 'swipe'].map(action => {
         const group = document.createElement('span');
@@ -8,8 +9,8 @@ export function createActionPanel({ onAction }) {
         group.setAttribute('role', 'group');
         group.setAttribute('aria-label', `${label}: пропуск или повтор нод`);
         group.innerHTML = `
-            <button type="button" data-action="${action}" data-mode="skip" aria-label="${label}: пропуск" title="${label} без нод и инструкции плана">${action === 'send' ? sendIcon : swipeIcon}</button>
-            <button type="button" data-action="${action}" data-mode="repeat" aria-label="${label}: повтор" title="${label}, повторяя последнюю ручную комбинацию">${action === 'send' ? sendIcon : swipeIcon}</button>`;
+            <button type="button" data-action="${action}" data-mode="skip" aria-label="${label}: пропуск" title="${label} без нод и инструкции плана">${action === 'send' ? skipIcon : swipeIcon}</button>
+            <button type="button" data-action="${action}" data-mode="repeat" aria-label="${label}: повтор" title="${label}, повторяя последнюю ручную комбинацию">${action === 'send' ? repeatIcon : swipeIcon}</button>`;
         // Enter/Space must activate only this button, not the host's send/swipe shortcuts.
         for (const type of ['keydown', 'keyup']) group.addEventListener(type, event => event.stopPropagation());
         group.addEventListener('click', event => {
