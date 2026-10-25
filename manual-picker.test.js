@@ -39,6 +39,8 @@ test('repeat resolves the saved order against the current catalog without trunca
     assert.deepEqual(resolvePreviousPlanNodes(catalog, 3, saved), ['Beta', 'Alpha', 'Beta']);
     assert.deepEqual(saved, ['beta', ' ALPHA ', 'beta']);
     assert.equal(resolvePreviousPlanNodes(catalog, 2, saved), null);
+    assert.deepEqual(resolvePreviousPlanNodes(catalog, 10, ['Custom event']), ['Custom event']);
+    assert.equal(resolvePreviousPlanNodes(catalog, 10, []), null);
     assert.equal(resolvePreviousPlanNodes(catalog, 3, saved, 'alpha'), null);
     assert.deepEqual(resolvePreviousPlanNodes(catalog, 1, ['Missing']), ['Missing']);
     assert.equal(resolvePreviousPlanNodes(catalog, 1, [null]), null);

@@ -811,13 +811,15 @@ test('repeat refuses wrong counts and blocked nodes without mutating saved selec
 
 test('manual freeform nodes are saved and repeated by both actions without requiring catalog membership', async t => {
     const nodes = ['A custom event with several words', 'Another event absent from nodes.txt'];
-    const h = createHarness(t);
+    const h = createHarness(t, { settings: { planNodeCount: 10 } });
     const manual = h.run();
     await setImmediate();
     h.picks[0].selection.resolve(nodes);
     await manual;
     assert.deepEqual([...h.settings.planManualLastNodes], nodes);
     assert.equal(h.finalize().at(-1).content, `Plan:\n1. [${nodes[0]}]\n2. [${nodes[1]}]`);
+    h.syncActionPanel();
+    assert.equal(h.actionPanels[0].states.at(-1).canRepeat, true);
     for (const action of ['send', 'swipe']) {
         await h.runPanelAction(action, 'repeat');
         assert.equal(h.picks.length, 1);

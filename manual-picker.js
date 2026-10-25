@@ -28,7 +28,7 @@ function resolveNodeText(value, names, blockedText) {
 }
 
 export function resolvePreviousPlanNodes(sections, count, previousNodes, blockedText = '') {
-    if (!Array.isArray(previousNodes) || previousNodes.length !== normalizePlanNodeCount(count)) return null;
+    if (!Array.isArray(previousNodes) || !previousNodes.length || previousNodes.length > normalizePlanNodeCount(count)) return null;
     const names = availableNames(sections, blockedText);
     const nodes = previousNodes.map(node => resolveNodeText(node, names, blockedText));
     return nodes.every(Boolean) ? nodes : null;
@@ -96,10 +96,10 @@ export function chooseManualPlanNodes(sections, count, options = {}) {
         repeatButton.disabled = !previousNodes;
         repeatButton.title = previousNodes
             ? 'Вставить прошлый выбор и сразу продолжить генерацию'
-            : 'Нет прошлого выбора с таким количеством доступных нод';
+            : 'Нет прошлого выбора в пределах текущего количества доступных нод';
         repeatButton.addEventListener('click', () => {
             if (!previousNodes) return;
-            inputs.forEach((input, index) => { input.value = previousNodes[index]; });
+            inputs.forEach((input, index) => { input.value = previousNodes[index] ?? ''; });
             finish([...previousNodes]);
         });
         let activeIndex = 0;

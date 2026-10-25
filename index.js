@@ -280,7 +280,8 @@ function actionPanelAvailable() {
 }
 
 function canRepeatSelection() {
-    return settings.planManualLastNodes.length === settings.planNodeCount
+    // Explicit sending can save fewer nodes than the configured slot limit.
+    return settings.planManualLastNodes.length > 0 && settings.planManualLastNodes.length <= settings.planNodeCount
         && blockPlanNode(settings.planManualLastNodes, settings.planBlockedNode).every(node => node.trim());
 }
 
