@@ -1,13 +1,15 @@
 export function createActionPanel({ onAction }) {
     const skipIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 4 11 8-11 8Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M19 4v16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
     const repeatIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const groups = ['send', 'swipe'].map(action => {
+    const randomIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/><circle cx="15" cy="15" r="1.4" fill="currentColor"/><circle cx="15" cy="9" r="1.4" fill="currentColor"/><circle cx="9" cy="15" r="1.4" fill="currentColor"/></svg>';
+    const groups =['send', 'swipe'].map(action => {
         const group = document.createElement('span');
         const label = action === 'send' ? 'Отправить' : 'Свайп';
         group.className = `chance-ext-actions chance-ext-${action}-actions`;
         group.setAttribute('role', 'group');
         group.setAttribute('aria-label', `${label}: пропуск или повтор нод`);
         group.innerHTML = `
+            <button type="button" data-action="${action}" data-mode="random" aria-label="${label}: случайные ноды" title="${label} со случайными нодами, как в автоматическом режиме">${randomIcon}</button>
             <button type="button" data-action="${action}" data-mode="skip" aria-label="${label}: пропуск" title="${label} без нод и инструкции плана">${skipIcon}</button>
             <button type="button" data-action="${action}" data-mode="repeat" aria-label="${label}: повтор" title="${label}, повторяя последнюю ручную комбинацию">${repeatIcon}</button>`;
         // Enter/Space must activate only this button, not the host's send/swipe shortcuts.

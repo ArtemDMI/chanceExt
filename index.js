@@ -303,7 +303,7 @@ function cancelPanelAction() {
 }
 
 async function runPanelAction(action, mode) {
-    if (!['send', 'swipe'].includes(action) || !['skip', 'repeat'].includes(mode)
+    if (!['send', 'swipe'].includes(action) || !['skip', 'repeat', 'random'].includes(mode)
         || !actionPanelAvailable() || activeAction || isGenerating()) return;
     if (mode === 'repeat' && !canRepeatSelection()) return;
     const context = SillyTavern.getContext();
@@ -324,6 +324,24 @@ async function runPanelAction(action, mode) {
             nodes = resolvePreviousPlanNodes(parseNodeCatalog(await response.text()), planSettings.planNodeCount,
                 previousNodes, planSettings.planBlockedNode);
             if (!nodes) throw new Error('Прошлый выбор содержит пустые или запрещённые ноды');
+        } else if (mode === 'random') {
+            const url = new URL('./nodes.txt', import.meta.url);
+            url.searchParams.set('t', Date.now().toString());
+            const response = await fetch(url, { cache: 'no-store', signal: operation.controller.signal });
+            if (!response.ok) throw new Error(`nodes.txt: HTTP ${response.status}`);
+            // Same picker and weight settings as the automatic file mode, so this button behaves identically.
+            nodes = pickRandomPlanNodes(parseNodeCatalog(await response.text()), planSettings.planNodeCount, {
+                weighted: planSettings.planWeighted,
+                flatten: planSettings.planWeightFlatten,
+                blockedText: planSettings.planBlockedNode,
+            });
+            if (nodes.length === 0) throw new Error('В nodes.txt нет нод для цепочки');
+            // Random picks are remembered so the green repeat button can reuse them.
+            settings.planManualLastNodes = [...nodes];
+            saveSettings();
+            toastr.success(nodes.join(' | '), 'Ноды из файла', {
+                ...TOAST_OPTIONS, timeOut: 2_000, extendedTimeOut: 0, positionClass: 'toast-top-center', escapeHtml: true,
+            });
         }
         if (operation.cancelled || operation.chatId !== SillyTavern.getContext().chatId || isGenerating()
             || !actionPanelAvailable() || settings.planNodeCount !== planSettings.planNodeCount

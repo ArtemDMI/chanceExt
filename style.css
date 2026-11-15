@@ -188,14 +188,14 @@
 
 #rightSendForm.chance-ext-has-send-actions {
     /* Reserve space instead of covering the textarea, including ST's narrow mobile layout. */
-    width: calc(var(--bottomFormBlockSize, 32px) + 56px);
-    min-width: calc(var(--bottomFormBlockSize, 32px) + 56px);
+    width: calc(var(--bottomFormBlockSize, 32px) + 85px);
+    min-width: calc(var(--bottomFormBlockSize, 32px) + 85px);
     flex-shrink: 0;
 }
 
 .chance-ext-send-actions {
     order: 2;
-    width: 54px;
+    width: 83px;
     height: var(--bottomFormBlockSize, 32px);
 }
 
@@ -235,6 +235,16 @@
     border-color: #d75b65;
     background: #29191e;
     color: #ff6574;
+}
+
+.chance-ext-actions button[data-mode='random'] {
+    border-color: #4f93e0;
+    background: #16222f;
+    color: #6db3ff;
+}
+
+.chance-ext-actions button[data-mode='random']:hover:not(:disabled) {
+    background: #1e3350;
 }
 
 .chance-ext-actions button[data-mode='skip']:hover:not(:disabled) {
