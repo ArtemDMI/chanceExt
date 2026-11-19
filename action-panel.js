@@ -7,10 +7,10 @@ export function createActionPanel({ onAction }) {
         const label = action === 'send' ? 'Отправить' : 'Свайп';
         group.className = `chance-ext-actions chance-ext-${action}-actions`;
         group.setAttribute('role', 'group');
-        group.setAttribute('aria-label', `${label}: пропуск или повтор нод`);
+        group.setAttribute('aria-label', `${label}: ручной выбор, повтор или случайные ноды`);
         group.innerHTML = `
             <button type="button" data-action="${action}" data-mode="random" aria-label="${label}: случайные ноды" title="${label} со случайными нодами, как в автоматическом режиме">${randomIcon}</button>
-            <button type="button" data-action="${action}" data-mode="skip" aria-label="${label}: пропуск" title="${label} без нод и инструкции плана">${skipIcon}</button>
+            <button type="button" data-action="${action}" data-mode="manual" aria-label="${label}: ручной выбор" title="${label} с ручным выбором нод">${skipIcon}</button>
             <button type="button" data-action="${action}" data-mode="repeat" aria-label="${label}: повтор" title="${label}, повторяя последнюю ручную комбинацию">${repeatIcon}</button>`;
         // Enter/Space must activate only this button, not the host's send/swipe shortcuts.
         for (const type of ['keydown', 'keyup']) group.addEventListener(type, event => event.stopPropagation());

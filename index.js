@@ -303,7 +303,7 @@ function cancelPanelAction() {
 }
 
 async function runPanelAction(action, mode) {
-    if (!['send', 'swipe'].includes(action) || !['skip', 'repeat', 'random'].includes(mode)
+    if (!['send', 'swipe'].includes(action) || !['manual', 'repeat', 'random'].includes(mode)
         || !actionPanelAvailable() || activeAction || isGenerating()) return;
     if (mode === 'repeat' && !canRepeatSelection()) return;
     const context = SillyTavern.getContext();
@@ -727,11 +727,15 @@ function startPlanRequest(type, panelChoice = null) {
             planController.abort();
         }
     });
-    if (panelChoice) {
+    // With the action panel on, the native send/swipe (and Enter) mean "skip";
+    // the manual picker is reachable only through the green panel button.
+    const nativeSkip = !panelChoice && actionPanelAvailable()
+        && ['normal', 'continue', 'swipe'].includes(String(type || 'normal').toLowerCase());
+    if (nativeSkip || (panelChoice && panelChoice.mode !== 'manual')) {
         return {
-            requestId, cancel, unsubscribe, planSettings: panelChoice.planSettings,
+            requestId, cancel, unsubscribe, planSettings: panelChoice?.planSettings ?? { ...settings },
             ready: Promise.resolve('file'),
-            task: Promise.resolve(panelChoice.mode === 'skip' ? { skipped: true } : [...panelChoice.nodes]),
+            task: Promise.resolve(nativeSkip ? { skipped: true } : [...panelChoice.nodes]),
         };
     }
     if (settings.planNodePanel) {

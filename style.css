@@ -247,7 +247,7 @@
     background: #1e3350;
 }
 
-.chance-ext-actions button[data-mode='skip']:hover:not(:disabled) {
+.chance-ext-actions button[data-mode='manual']:hover:not(:disabled) {
     background: #203a2b;
 }
 

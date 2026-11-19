@@ -157,6 +157,8 @@ function createHarness(t, options = {}) {
         planManualSelection: true,
         planNodeCount: 2,
         planInjectPrompt: 'Plan:\n{{plan}}',
+        // With inline actions on, native send/swipe skip the picker; most tests cover the picker path.
+        planActionPanel: false,
         ...options.settings,
     });
     api.installPlanFinalizer();
@@ -690,36 +692,43 @@ test('panel size changes are saved and supplied when the panel is reopened', t =
 });
 
 for (const action of ['send', 'swipe']) {
-    for (const mode of ['skip', 'repeat']) {
-        test(`action panel ${action}/${mode} bypasses manual selection exactly once`, { timeout: 3000 }, async t => {
-            const nodes = ['Delta', 'Alpha'];
-            const h = createHarness(t, { settings: { planManualLastNodes: nodes } });
-            h.syncActionPanel();
-            await h.actionPanels[0].options.onAction(action, mode);
-            assert.deepEqual(h.hostCalls, [{ action, args: action === 'swipe' ? [null, 'right'] : [] }]);
-            assert.equal(h.picks.length, 0);
-            assert.equal(h.randomPicks.length, 0);
-            assert.equal(h.requests.filter(request => request.url.includes('/nodes.txt?')).length, mode === 'skip' ? 0 : 1);
-            assert.equal(h.requests.filter(request => request.url === probabilityUrl).length, 1);
-            const prompt = h.finalize();
-            assert.equal(prompt.length, mode === 'skip' ? 1 : 2);
-            if (mode === 'repeat') assert.equal(prompt.at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
-            assert.deepEqual(h.settings.planManualLastNodes, nodes);
-            assert.equal(h.actionPanels[0].states.at(-1).busy, false);
+    test(`action panel ${action}/repeat bypasses manual selection exactly once`, { timeout: 3000 }, async t => {
+        const nodes = ['Delta', 'Alpha'];
+        const h = createHarness(t, { settings: { planActionPanel: true, planManualLastNodes: nodes } });
+        h.syncActionPanel();
+        await h.actionPanels[0].options.onAction(action, 'repeat');
+        assert.deepEqual(h.hostCalls, [{ action, args: action === 'swipe' ? [null, 'right'] : [] }]);
+        assert.equal(h.picks.length, 0);
+        assert.equal(h.randomPicks.length, 0);
+        assert.equal(h.requests.filter(request => request.url.includes('/nodes.txt?')).length, 1);
+        assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Delta]\n2. [Alpha]');
+        assert.deepEqual(h.settings.planManualLastNodes, nodes);
+        assert.equal(h.actionPanels[0].states.at(-1).busy, false);
+    });
 
-            const normal = h.run();
-            await setImmediate();
-            assert.equal(h.picks.length, 1, 'an ordinary run must reopen the manual picker');
-            h.picks[0].selection.resolve(['Gamma', 'Beta']);
-            await normal;
-            assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Gamma]\n2. [Beta]');
-            assert.deepEqual(h.aborts, []);
-        });
-    }
+    test(`action panel ${action}/manual opens the picker, native ${action} skips it`, { timeout: 3000 }, async t => {
+        const h = createHarness(t, { settings: { planActionPanel: true, planManualLastNodes: ['Delta', 'Alpha'] } });
+        h.syncActionPanel();
+        const manual = h.actionPanels[0].options.onAction(action, 'manual');
+        await setImmediate();
+        assert.equal(h.picks.length, 1, 'the green button must open the manual picker');
+        h.picks[0].selection.resolve(['Gamma', 'Beta']);
+        await manual;
+        assert.deepEqual(h.hostCalls, [{ action, args: action === 'swipe' ? [null, 'right'] : [] }]);
+        assert.equal(h.finalize().at(-1).content, 'Plan:\n1. [Gamma]\n2. [Beta]');
+        assert.deepEqual([...h.settings.planManualLastNodes], ['Gamma', 'Beta']);
+
+        // Native button and Enter go through the same ordinary generation.
+        await h.run(action === 'send' ? 'normal' : 'swipe');
+        assert.equal(h.picks.length, 1, 'an ordinary run must skip the picker');
+        assert.equal(h.finalize().length, 1);
+        assert.deepEqual([...h.settings.planManualLastNodes], ['Gamma', 'Beta']);
+        assert.deepEqual(h.aborts, []);
+    });
 }
 
 test('inline actions are unavailable for pinned nodes and leave ordinary panel generation unchanged', async t => {
-    const h = createHarness(t, { settings: {
+    const h = createHarness(t, { settings: { planActionPanel: true,
         planSource: 'api', planNodePanel: true, planPanelNodes: ['Gamma', 'Beta'],
         planManualLastNodes: ['Delta', 'Alpha'],
     } });
@@ -737,7 +746,7 @@ test('inline actions are unavailable for pinned nodes and leave ordinary panel g
 test('Send continue and nested quiet helpers keep the one-time panel choice tied to the main request', async t => {
     for (const type of ['normal', 'continue']) {
         const h = createHarness(t, {
-            settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+            settings: { planActionPanel: true, planManualLastNodes: ['Delta', 'Alpha'] },
             hostAction: async (_action, harness) => {
                 await harness.run('quiet');
                 await harness.run(type);
@@ -754,7 +763,7 @@ test('action repeat rereads the current catalog and resolves canonical names wit
     let catalog = 'ALPHA = 9\n---\nDELTA = 2';
     const saved = ['delta', 'alpha'];
     const h = createHarness(t, {
-        settings: { planManualLastNodes: saved },
+        settings: { planActionPanel: true, planManualLastNodes: saved },
         fileResponse: async () => ({ ok: true, text: async () => catalog }),
     });
     await h.runPanelAction('send', 'repeat');
@@ -772,17 +781,15 @@ test('no-op Send, existing swipe and rejected hosts cannot leak a panel choice i
     for (const action of ['send', 'swipe']) {
         for (const reject of [false, true]) {
             const h = createHarness(t, {
-                settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+                settings: { planActionPanel: true, planManualLastNodes: ['Delta', 'Alpha'] },
                 hostAction: async () => { if (reject) throw new Error('Host rejected'); },
             });
             await h.runPanelAction(action, 'repeat');
             assert.equal(h.hostCalls.length, 1);
             assert.equal(h.finalize().length, 1);
-            const run = h.run(action === 'send' ? 'normal' : 'swipe');
-            await setImmediate();
-            assert.equal(h.picks.length, 1);
-            h.picks[0].selection.resolve({ skipped: true });
-            await run;
+            // Native generation skips nodes, so a leaked repeat choice would show up as a plan line.
+            await h.run(action === 'send' ? 'normal' : 'swipe');
+            assert.equal(h.picks.length, 0);
             assert.equal(h.finalize().length, 1);
             assert.equal(h.actionPanels[0].states.at(-1).busy, false);
         }
@@ -794,7 +801,7 @@ test('repeat refuses wrong counts and blocked nodes without mutating saved selec
         { planNodeCount: 1 },
         { planBlockedNode: 'Alpha' },
     ]) {
-        const h = createHarness(t, { settings: {
+        const h = createHarness(t, { settings: { planActionPanel: true,
             planManualLastNodes: ['Delta', 'Alpha'], planPanelNodes: ['Gamma', 'Beta'], ...settings,
         } });
         const previous = [...h.settings.planManualLastNodes];
@@ -811,8 +818,9 @@ test('repeat refuses wrong counts and blocked nodes without mutating saved selec
 
 test('manual freeform nodes are saved and repeated by both actions without requiring catalog membership', async t => {
     const nodes = ['A custom event with several words', 'Another event absent from nodes.txt'];
-    const h = createHarness(t, { settings: { planNodeCount: 10 } });
-    const manual = h.run();
+    const h = createHarness(t, { settings: { planActionPanel: true, planNodeCount: 10 } });
+    h.syncActionPanel();
+    const manual = h.runPanelAction('send', 'manual');
     await setImmediate();
     h.picks[0].selection.resolve(nodes);
     await manual;
@@ -832,14 +840,14 @@ test('repeat preflight blocks double clicks and awaits the entire host promise',
     let file;
     let host;
     const h = createHarness(t, {
-        settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+        settings: { planActionPanel: true, planManualLastNodes: ['Delta', 'Alpha'] },
         fileResponse: () => file.promise,
         hostAction: async (_action, harness) => { await harness.run(); await host.promise; },
     });
     file = h.defer({ ok: true, text: async () => catalogText });
     host = h.defer();
     const run = h.runPanelAction('send', 'repeat');
-    await h.runPanelAction('swipe', 'skip');
+    await h.runPanelAction('swipe', 'manual');
     assert.equal(h.requests.length, 1);
     assert.equal(h.hostCalls.length, 0);
     assert.equal(h.actionPanels[0].states.at(-1).busy, true);
@@ -859,7 +867,7 @@ for (const event of ['GENERATION_STOPPED', 'CHAT_CHANGED']) {
     test(`${event} cancels repeat preflight before a late catalog can invoke the host`, async t => {
         let file;
         const h = createHarness(t, {
-            settings: { planManualLastNodes: ['Delta', 'Alpha'] }, fileResponse: () => file.promise,
+            settings: { planActionPanel: true, planManualLastNodes: ['Delta', 'Alpha'] }, fileResponse: () => file.promise,
         });
         file = h.defer({ ok: true, text: async () => catalogText });
         const run = h.runPanelAction('swipe', 'repeat');
@@ -878,12 +886,12 @@ for (const event of ['GENERATION_STOPPED', 'CHAT_CHANGED']) {
 test('host generation state blocks actions and lifecycle events refresh panel busy state', async t => {
     let busy = true;
     const h = createHarness(t, {
-        isGenerating: () => busy, settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+        isGenerating: () => busy, settings: { planActionPanel: true, planManualLastNodes: ['Delta', 'Alpha'] },
     });
     h.syncActionPanel();
     assert.equal(h.actionPanels[0].states.at(-1).busy, true);
     for (const action of ['send', 'swipe']) {
-        for (const mode of ['skip', 'repeat']) await h.runPanelAction(action, mode);
+        for (const mode of ['manual', 'repeat']) await h.runPanelAction(action, mode);
     }
     assert.equal(h.hostCalls.length, 0);
     assert.equal(h.requests.length, 0);
@@ -902,7 +910,7 @@ test('repeat preflight rejects stale count, blocked nodes, visibility, chat and 
         let file;
         let busy = false;
         const h = createHarness(t, {
-            settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+            settings: { planActionPanel: true, planManualLastNodes: ['Delta', 'Alpha'] },
             isGenerating: () => busy,
             fileResponse: () => file.promise,
             hostAction: async () => {},
@@ -929,7 +937,7 @@ test('repeat preflight rejects stale count, blocked nodes, visibility, chat and 
 test('repeat snapshots nodes and injection settings before host awaits probability', async t => {
     let probability;
     const h = createHarness(t, {
-        settings: { planManualLastNodes: ['Delta', 'Alpha'] },
+        settings: { planActionPanel: true, planManualLastNodes: ['Delta', 'Alpha'] },
         probabilityResponse: () => probability.promise,
     });
     probability = h.defer(probabilityResponse());
@@ -948,7 +956,7 @@ test('repeat snapshots nodes and injection settings before host awaits probabili
 });
 
 test('inline actions do not use floating geometry or alter node panel preferences', t => {
-    const h = createHarness(t, { settings: {
+    const h = createHarness(t, { settings: { planActionPanel: true,
         planActionPosition: { x: 50, y: 80 }, planActionSize: { width: 400, height: 200 },
         planPanelPosition: { x: 10, y: 20 }, planPanelSize: { width: 300, height: 180 },
     } });
@@ -968,7 +976,7 @@ test('inline actions do not use floating geometry or alter node panel preference
 });
 
 test('inline actions require enabled controls, file source, manual selection and plan injection without pinned nodes', async t => {
-    const h = createHarness(t);
+    const h = createHarness(t, { settings: { planActionPanel: true } });
     h.syncActionPanel();
     h.syncActionPanel();
     assert.equal(h.actionPanels.length, 1);
@@ -986,7 +994,7 @@ test('inline actions require enabled controls, file source, manual selection and
         });
         h.syncActionPanel();
         for (const action of ['send', 'swipe']) {
-            for (const mode of ['skip', 'repeat']) await h.runPanelAction(action, mode);
+            for (const mode of ['manual', 'repeat']) await h.runPanelAction(action, mode);
         }
         assert.equal(h.actionPanels[0].destroyed, true);
         assert.equal(h.hostCalls.length, 0);
@@ -1004,7 +1012,7 @@ test('inline actions require enabled controls, file source, manual selection and
 });
 
 test('toggling manual selection immediately creates and removes inline actions', t => {
-    const h = createHarness(t, { settings: { planManualSelection: false } });
+    const h = createHarness(t, { settings: { planActionPanel: true, planManualSelection: false } });
     h.bindSettingsUi();
     h.syncActionPanel();
     assert.equal(h.actionPanels.length, 0);
